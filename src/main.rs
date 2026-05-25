@@ -55,6 +55,11 @@ impl AllSongs {
         })
     }
 
+    fn sort(&mut self) {
+        self.songs.sort_unstable_by_key(|s| s.id);
+        self.indices = Self::indices_from_song_list(&self.songs);
+    }
+
     fn indices_from_song_list(v: &[SongInfo]) -> HashMap<u32, usize> {
         let mut map = HashMap::new();
         v.iter().enumerate().for_each(|(idx, s)| {
@@ -170,7 +175,7 @@ impl AllSongs {
             .open(&temp_file_path)?;
         let mut temp_file_writer = BufWriter::new(temp_song_file);
 
-        self.songs.sort_unstable_by_key(|s| s.id);
+        self.sort();
         self.songs.iter_mut().for_each(|song| {
             let json = serde_json::to_string(song);
             match json {
@@ -313,7 +318,7 @@ fn main() -> std::io::Result<()> {
             }
             "list" => {
                 println!("All songs: ");
-                songs.songs.sort_unstable_by_key(|s| s.id);
+                songs.sort();
                 songs.songs.iter().for_each(|s| {
                     println!(
                         "{} ({})\n\tby {} on {}",
