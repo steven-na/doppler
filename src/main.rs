@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs,
     io::{BufRead, BufReader, BufWriter, Write},
 };
@@ -14,6 +14,7 @@ struct SongInfo {
     artist: String,
     album: String,
     duration: u32,
+    filename: Option<String>,
     id: Option<u32>,
     #[serde(skip)]
     file_entry_up_to_date: bool,
@@ -26,6 +27,7 @@ impl SongInfo {
             artist: "".into(),
             album: "".into(),
             duration: 0,
+            filename: None,
             id: None,
             file_entry_up_to_date: false,
         }
@@ -36,6 +38,7 @@ impl SongInfo {
 struct AllSongs {
     songs: Vec<SongInfo>,
     indices: HashMap<u32, usize>,
+    removed: HashSet<u32>,
     max_id: Option<u32>,
 }
 
@@ -51,6 +54,7 @@ impl AllSongs {
         Ok(AllSongs {
             songs,
             indices,
+            removed: HashSet::new(),
             max_id,
         })
     }
@@ -123,6 +127,26 @@ impl AllSongs {
         Ok(())
     }
 
+    fn remove_song(&mut self, id: u32) -> std::io::Result<()> {
+        if !self.songs.iter().any(|s| match s.id {
+            Some(o_id) => id == o_id,
+            None => false,
+        }) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "Song with this id doesnt exist",
+            ));
+        } else if self.removed.contains(&id) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::AlreadyExists,
+                "Song already removed",
+            ));
+        }
+
+        self.removed.insert(id);
+        Ok(())
+    }
+
     fn update_song(&mut self, song: SongInfo) -> std::io::Result<()> {
         let id = match song.id {
             Some(i) => i,
@@ -177,17 +201,39 @@ impl AllSongs {
 
         self.sort();
         self.songs.iter_mut().for_each(|song| {
+            let i = match song.id {
+                Some(t) => t,
+                None => {
+                    println!("Attempted to write song with no id");
+                    dbg!(song);
+                    return;
+                }
+            };
+
+            if self.removed.contains(&i) {
+                return;
+            }
+
             let json = serde_json::to_string(song);
             match json {
                 Ok(j) => {
                     let _ = temp_file_writer.write_all(j.as_bytes());
                     let _ = temp_file_writer.write_all(b"\n");
                 }
-                Err(_err) => (),
+                Err(err) => {
+                    println!("Error writing to file. ({})", err);
+                }
             }
         });
 
         fs::rename(temp_file_path, SONGS_FILE_PATH)?;
+
+        self.songs.retain(|s| match s.id {
+            Some(i) => !self.removed.contains(&i),
+            None => true,
+        });
+
+        self.removed.clear();
 
         self.songs.iter_mut().for_each(|s| {
             s.file_entry_up_to_date = true;
@@ -226,8 +272,6 @@ fn input(buf: &mut String, prompt: &str) -> std::io::Result<usize> {
 
 fn main() -> std::io::Result<()> {
     let mut songs = AllSongs::new()?;
-
-    play_song(&songs.songs[0]);
 
     let mut user_input = String::new();
     let mut selected_id: Option<u32> = None;
@@ -270,6 +314,38 @@ fn main() -> std::io::Result<()> {
                         continue;
                     }
                 };
+                let idx = songs.indices.get(&selected_id.unwrap_or(0));
+                if let Some(idx) = idx
+                    && let Some(s) = songs.songs.get(*idx)
+                {
+                    dbg!(s);
+                }
+            }
+            "play" => {
+                if let Some(id) = selected_id
+                    && let Some(&idx) = songs.indices.get(&id)
+                    && let Some(s) = songs.songs.get(idx)
+                {
+                    play_song(s);
+                    continue;
+                }
+                match &selected_id {
+                    Some(id) => println!("Invalid song selected {}", id),
+                    None => println!("No song selected"),
+                };
+            }
+            "remove" => {
+                if let Some(id) = selected_id {
+                    match songs.remove_song(id) {
+                        Ok(_) => {
+                            println!("Removed song");
+                            selected_id = None;
+                        }
+                        Err(err) => println!("Failed to remove song ({})", err),
+                    }
+                } else {
+                    println!("No song selected");
+                }
             }
             "update" => {
                 if selected_id.is_none() {
@@ -304,7 +380,7 @@ fn main() -> std::io::Result<()> {
                     s.artist = user_input.trim().to_string();
                 }
                 let _ = input(&mut user_input, "Duration (base 10 seconds)> ");
-                dbg!(&user_input);
+
                 if !user_input.trim().is_empty() {
                     s.duration = match user_input.trim().parse::<u32>() {
                         Ok(d) => d,
@@ -320,8 +396,14 @@ fn main() -> std::io::Result<()> {
                 println!("All songs: ");
                 songs.sort();
                 songs.songs.iter().for_each(|s| {
+                    let removed = if let Some(id) = &s.id {
+                        if songs.removed.contains(id) { "~" } else { "" }
+                    } else {
+                        ""
+                    };
+                    let modified = if s.file_entry_up_to_date { "" } else { "*" };
                     println!(
-                        "{} ({})\n\tby {} on {}",
+                        "{removed}{modified}{} ({})\n\tby {} on {}",
                         s.name,
                         seconds_to_base60_string(s.duration),
                         s.artist,
@@ -329,14 +411,26 @@ fn main() -> std::io::Result<()> {
                     );
                 });
             }
+            "write" => {
+                match songs.update_songs_file() {
+                    Ok(()) => println!("Wrote songs to file"),
+                    Err(err) => println!("Failed to write songs to file ({})", err),
+                };
+            }
             "help" => {
                 fn print_help(cmd: &str, desc: &str) {
                     println!("\"{cmd}\"\n\t{desc}");
                 }
+                print_help("play", "play selected song");
                 print_help("add", "adds a song to the system.");
                 print_help("list", "list all songs");
                 print_help("select", "select a song for updating or removal");
                 print_help("update", "update fields for selected song");
+                print_help(
+                    "remove",
+                    "remove selected song from songs.\n\tDoes not update until changes are written",
+                );
+                print_help("write", "write changes to file");
             }
             "exit" => {
                 println!("Exiting...");
@@ -345,8 +439,6 @@ fn main() -> std::io::Result<()> {
             _ => println!("Invalid input. try help or exit."),
         }
     }
-
-    songs.update_songs_file()?;
 
     Ok(())
 }
