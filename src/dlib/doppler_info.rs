@@ -38,6 +38,23 @@ impl DopplerInfo {
         })
     }
 
+    pub fn play_song(&self, id: u32) -> std::io::Result<()> {
+        let song = self
+            .indices
+            .get(&id)
+            .and_then(|&idx| self.songs.get(idx))
+            .ok_or(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "No song with this id exists",
+            ))?;
+
+        let duration_str = crate::util::time_util::seconds_to_base60_string(song.duration);
+        println!(
+            "Now playing (0:00/{duration_str}): {0} ({1}) by {2}",
+            song.name, song.album, song.artist
+        );
+        Ok(())
+    }
     pub fn sort(&mut self) {
         self.songs.sort_unstable_by_key(|s| s.id);
         self.indices = Self::indices_from_song_list(&self.songs);
