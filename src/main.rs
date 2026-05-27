@@ -8,7 +8,7 @@ pub mod util;
 fn main() -> std::io::Result<()> {
     let mut songs = DopplerInfo::new()?;
 
-    let mut prog_state: ProgramState = Default::default();
+    let mut prog_state: ProgramState = ProgramState::new();
     while let Ok(i) = command_parser::handle(get_input(), &mut songs, &mut prog_state) {
         match i {
             CommandOutcome::Carryon => (),
