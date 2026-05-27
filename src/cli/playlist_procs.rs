@@ -83,8 +83,9 @@ pub mod playlist {
             });
 
             loop {
-                let inp = get_input(None);
+                let inp = get_input(Some("$ ".to_string()));
                 if inp.trim() == "list" {
+                    println!("idx|song");
                     p.songs.iter().enumerate().for_each(|(i, id)| {
                         if let Some(s) = dinfo
                             .song_indices
@@ -114,7 +115,33 @@ pub mod playlist {
                             continue;
                         }
                     }
+                } else if inp.trim().starts_with("i")
+                    && let Ok(idx) = inp
+                        .as_str()
+                        .trim()
+                        .strip_prefix("i")
+                        .unwrap_or("")
+                        .parse::<usize>()
+                {
+                    let id = match get_input(Some("ID of song to insert > ".to_string()))
+                        .as_str()
+                        .trim()
+                        .parse::<u32>()
+                    {
+                        Ok(i) => i,
+                        Err(err) => {
+                            println!("Failed to get index ({})", err);
+                            continue;
+                        }
+                    };
+
+                    match p.insert_song(idx, id) {
+                        Ok(()) => println!("Inserted song {} at index {}", id, idx),
+                        Err(err) => println!("Failed to insert song ({})", err),
+                    }
+                    continue;
                 }
+
                 match inp.as_str().trim().parse::<u32>() {
                     Ok(id) => {
                         if !dinfo.songs.iter().any(|s| s.id == Some(id)) {
@@ -190,10 +217,13 @@ pub mod playlist {
 
     pub fn help() {
         println!("Playlist help (type nothing to exit playlist mode):");
-        print_help("(a)dd", "adds a playlist");
-        print_help("(u)pdate", "update selected playlist");
+        print_help("(a)dd", "add a playlist");
+        print_help("(u)pdate", "update name of selected playlist");
         print_help("(s)elect", "select a playlist");
-        print_help("(a)dd(s)ongs", "add songs to selected playlist");
+        print_help(
+            "(a)dd(s)ongs",
+            "add songs to selected playlist\n\t- [id] to add id to end of playlist\n\t- r[idx] to remove song at idx\n\t- i[idx] then [id] to insert song in middle of playlist",
+        );
         print_help("(r)emove", "remove selected playlist");
         print_help("(l)ist", "list playlists and the songs in them");
     }

@@ -1,6 +1,6 @@
 pub mod song {
     use crate::{
-        cli::parser::command_parser::{ProgramState, input},
+        cli::parser::command_parser::{ProgramState, get_input, input},
         dlib::{doppler_info::DopplerInfo, song::SongInfo},
         util::print_util::print_help,
     };
@@ -67,7 +67,7 @@ pub mod song {
     pub fn remove(dinfo: &mut DopplerInfo, c: &mut ProgramState) {
         if let Some(id) = c.selected_id {
             match dinfo.remove_song(id) {
-                Ok(_) => {
+                Ok(()) => {
                     println!("Removed song");
                     c.selected_id = None;
                 }
@@ -146,11 +146,31 @@ pub mod song {
         });
     }
 
+    pub fn search(dinfo: &DopplerInfo) {
+        let query = get_input(Some("Search> ".to_string()));
+        let songs = dinfo
+            .songs
+            .iter()
+            .filter_map(|a| a.id.map(|i| (a.name.clone(), i)));
+        let matches = crate::util::search_utli::search(query.as_str(), songs, 10);
+
+        matches.iter().for_each(|(w, id)| {
+            if let Some(s) = dinfo
+                .song_indices
+                .get(id)
+                .and_then(|&idx| dinfo.songs.get(idx))
+            {
+                println!("{:.2} [{}] {}", w, id, s);
+            }
+        });
+    }
+
     pub fn help() {
         print_help("(p)lay", "play selected song");
         print_help("(a)dd", "adds a song to the system.");
         print_help("(l)ist", "list all songs");
         print_help("(s)elect", "select a song for updating or removal");
+        print_help("(ss)earch", "search for a song");
         print_help("(u)pdate", "update fields for selected song");
         print_help(
             "(r)emove",

@@ -33,6 +33,17 @@ impl PlaylistInfo {
         Ok(())
     }
 
+    pub fn insert_song(&mut self, idx: usize, id: u32) -> std::io::Result<()> {
+        if idx > self.songs.len() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Index out of bounds",
+            ));
+        }
+        self.songs.insert(idx, id);
+        Ok(())
+    }
+
     pub fn remove_song_by_index(&mut self, idx: usize) -> std::io::Result<()> {
         if idx < self.songs.len() {
             self.songs.remove(idx);

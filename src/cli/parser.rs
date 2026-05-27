@@ -59,6 +59,7 @@ pub mod command_parser {
                 println!("Exiting...");
                 return Ok(CommandOutcome::Exit);
             }
+            "ss" | "search" => song::search(dinfo),
             "playlist" | "pl" => match handle_playlist(dinfo) {
                 Ok(()) => println!("Exiting playlist mode with success"),
                 Err(err) => {
