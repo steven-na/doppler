@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PlaylistInfo {
     pub name: String,
     pub songs: Vec<u32>,
@@ -33,16 +33,16 @@ impl PlaylistInfo {
         Ok(())
     }
 
-    pub fn remove_song(&mut self, idx: usize) -> std::io::Result<()> {
+    pub fn remove_song_by_index(&mut self, idx: usize) -> std::io::Result<()> {
         if idx < self.songs.len() {
             self.songs.remove(idx);
             self.file_entry_up_to_date = false;
-            return Ok(());
+            Ok(())
         } else {
-            return Err(std::io::Error::new(
+            Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
                 "Index out of bounds",
-            ));
+            ))
         }
     }
 
