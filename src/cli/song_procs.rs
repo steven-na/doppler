@@ -52,15 +52,24 @@ pub mod song {
         }
     }
 
-    pub fn play(dinfo: &mut DopplerInfo, c: &mut ProgramState) {
+    pub fn play(dinfo: &mut DopplerInfo, c: &mut ProgramState, player: &rodio::Player) {
         if c.selected_id.is_none() {
             println!("No song selected");
             return;
         }
-        if let Some(id) = c.selected_id
-            && let Err(e) = dinfo.play_song(id)
-        {
-            println!("Failed to play song ({})", e);
+        if let Some(id) = c.selected_id {
+            if let Err(e) = dinfo.play_song(id, player) {
+                println!("Failed to play song ({})", e);
+            } else {
+                if let Some(song) = dinfo.get_song_by_id(id) {
+                    let duration_str =
+                        crate::util::time_util::seconds_to_base60_string(song.duration);
+                    let playback_time = player.get_pos().as_secs() as u32;
+                    let playback_time =
+                        crate::util::time_util::seconds_to_base60_string(playback_time);
+                    println!("Now playing ({playback_time}/{duration_str}): {}", song);
+                }
+            }
         }
     }
 
@@ -148,30 +157,24 @@ pub mod song {
 
     pub fn search(dinfo: &DopplerInfo) {
         let query = get_input(Some("Search> ".to_string()));
-        let songs = dinfo
-            .songs
-            .iter()
-            .filter_map(|a| a.id.map(|i| (a.name.clone(), i)));
-        let matches = crate::util::search_utli::search(query.as_str(), songs, 10);
+        let matches = dinfo.search_song(query);
 
         matches.iter().for_each(|(w, id)| {
-            if let Some(s) = dinfo
-                .song_indices
-                .get(id)
-                .and_then(|&idx| dinfo.songs.get(idx))
-            {
+            if let Some(s) = dinfo.get_song_by_id(*id) {
                 println!("{:.2} [{}] {}", w, id, s);
             }
         });
     }
 
     pub fn help() {
+        println!("Song help:");
         print_help("(p)lay", "play selected song");
+        print_help("(x)un/pause", "toggle paused state");
         print_help("(a)dd", "adds a song to the system.");
         print_help("(l)ist", "list all songs");
         print_help("(s)elect", "select a song for updating or removal");
         print_help("(ss)earch", "search for a song");
-        print_help("(u)pdate", "update fields for selected song");
+        print_help("c|update", "update fields for selected song");
         print_help(
             "(r)emove",
             "remove selected song from songs.\n\tDoes not update until changes are written",

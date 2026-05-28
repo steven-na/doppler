@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::dlib::playlist_iter::PlaylistIter;
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PlaylistInfo {
     pub name: String,
@@ -60,6 +62,14 @@ impl PlaylistInfo {
     pub fn force_add_song(&mut self, id: u32) {
         self.songs.push(id);
         self.file_entry_up_to_date = false;
+    }
+
+    pub fn into_dynamic_iter(self) -> PlaylistIter {
+        PlaylistIter::new(&self.songs)
+    }
+
+    pub fn dynamic_iter(&self) -> PlaylistIter {
+        PlaylistIter::new(&self.clone().songs)
     }
 }
 

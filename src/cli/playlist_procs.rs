@@ -199,12 +199,8 @@ pub mod playlist {
             };
             let modified = if p.file_entry_up_to_date { "" } else { "*" };
             println!("{removed}{modified}{}", p.name);
-            p.songs.iter().for_each(|p| {
-                let s = dinfo
-                    .song_indices
-                    .get(p)
-                    .and_then(|&idx| dinfo.songs.get(idx));
-
+            p.songs.iter().for_each(|id| {
+                let s = dinfo.get_song_by_id(*id);
                 if let Some(s) = s {
                     println!("{}", s);
                 }
@@ -217,6 +213,8 @@ pub mod playlist {
 
     pub fn help() {
         println!("Playlist help (type nothing to exit playlist mode):");
+        print_help("(p)lay", "play the selected playlist");
+        print_help("c|shuffle", "play the selected playlist in random order");
         print_help("(a)dd", "add a playlist");
         print_help("(u)pdate", "update name of selected playlist");
         print_help("(s)elect", "select a playlist");
@@ -226,5 +224,42 @@ pub mod playlist {
         );
         print_help("(r)emove", "remove selected playlist");
         print_help("(l)ist", "list playlists and the songs in them");
+    }
+
+    pub fn play(dinfo: &mut DopplerInfo, c: &ProgramState, player: &rodio::Player) {
+        if let Some(id) = c.selected_id {
+            let songs = dinfo.get_playlist_by_id(id);
+            match songs {
+                Some(songs) => {
+                    let songs = songs.dynamic_iter();
+                    songs.for_each(|id| match dinfo.enqueue_song(id, player) {
+                        Ok(()) => (),
+                        Err(err) => println!("Failed to enqueue song ({})", err),
+                    });
+                }
+                None => println!("No playlist with this id exists"),
+            }
+        } else {
+            println!("No playlist selected");
+        }
+    }
+
+    pub fn shuffle_play(dinfo: &mut DopplerInfo, c: &ProgramState, player: &rodio::Player) {
+        if let Some(id) = c.selected_id {
+            let songs = dinfo.get_playlist_by_id(id);
+            match songs {
+                Some(songs) => {
+                    let mut songs = songs.dynamic_iter();
+                    songs.shuffle();
+                    songs.for_each(|id| match dinfo.enqueue_song(id, player) {
+                        Ok(()) => (),
+                        Err(err) => println!("Failed to enqueue song ({})", err),
+                    });
+                }
+                None => println!("No playlist with this id exists"),
+            }
+        } else {
+            println!("No playlist selected");
+        }
     }
 }

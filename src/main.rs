@@ -1,22 +1,12 @@
-use crate::cli::parser::command_parser::{self, CommandOutcome, ProgramState, get_input};
-use crate::dlib::doppler_info::DopplerInfo;
-
 pub mod cli;
 pub mod dlib;
 pub mod util;
 
 fn main() -> std::io::Result<()> {
-    let mut songs = DopplerInfo::new()?;
+    let handle =
+        rodio::DeviceSinkBuilder::open_default_sink().expect("Failed to open audio handle");
+    let player = rodio::Player::connect_new(&handle.mixer());
+    player.set_volume(0.3);
 
-    let mut prog_state: ProgramState = ProgramState::new();
-    let mut prompt = Some("> ".to_string());
-    while let Ok(i) = command_parser::handle(get_input(prompt), &mut songs, &mut prog_state) {
-        match i {
-            CommandOutcome::Carryon => (),
-            CommandOutcome::Exit => break,
-        }
-        prompt = prog_state.selected_id.map(|id| format!("{}> ", id));
-    }
-
-    Ok(())
+    cli::parser::command_parser::main_loop(&player)
 }

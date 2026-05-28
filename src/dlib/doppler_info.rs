@@ -1,8 +1,10 @@
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::{BufRead, BufReader, BufWriter, Write};
+use std::sync::{Arc, Mutex};
 
 use crate::dlib::{playlist::*, song::*};
+use crate::util::search_utli::search;
 
 const SONGS_FILE_PATH: &str = "./data/songs.json";
 const PLAYLISTS_FILE_PATH: &str = "./data/playlists.json";
@@ -11,12 +13,17 @@ const PLAYLISTS_FILE_PATH: &str = "./data/playlists.json";
 pub struct DopplerInfo {
     pub songs: Vec<SongInfo>,
     pub playlists: Vec<PlaylistInfo>,
+
     pub song_indices: HashMap<u32, usize>,
     pub playlist_indices: HashMap<u32, usize>,
+
     pub removed_songs: HashSet<u32>,
     pub removed_playlists: HashSet<u32>,
+
     pub max_song_id: Option<u32>,
     pub max_playlist_id: Option<u32>,
+
+    pub currently_playing: Arc<Mutex<Option<u32>>>,
 }
 
 impl DopplerInfo {
@@ -45,25 +52,76 @@ impl DopplerInfo {
             removed_playlists: HashSet::new(),
             max_song_id,
             max_playlist_id,
+            currently_playing: Arc::new(Mutex::new(None)),
         })
     }
 
-    pub fn play_song(&self, id: u32) -> std::io::Result<()> {
-        let song = self
-            .song_indices
+    pub fn play_song(&mut self, id: u32, player: &rodio::Player) -> std::io::Result<()> {
+        let _song = self.get_song_by_id(id).ok_or(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "No song with this id exists",
+        ))?;
+
+        const WAV_FILE_PATH: &str = "./data/wav/test.wav";
+
+        let audio_file = BufReader::new(fs::File::open(WAV_FILE_PATH)?);
+        let source = rodio::Decoder::try_from(audio_file).expect("Failed to decode audio file");
+
+        player.clear();
+        player.append(source);
+
+        let currently_playing = Arc::clone(&self.currently_playing);
+        player.append(rodio::source::EmptyCallback::new(Box::new(move || {
+            let mut lock = currently_playing.lock().unwrap();
+            *lock = None;
+        })));
+
+        player.play();
+        let mut lock = self.currently_playing.lock().unwrap();
+        *lock = Some(id);
+        Ok(())
+    }
+
+    pub fn enqueue_song(&mut self, id: u32, player: &rodio::Player) -> std::io::Result<()> {
+        let _song = self.get_song_by_id(id).ok_or(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "No song with this id exists",
+        ))?;
+
+        const WAV_FILE_PATH: &str = "./data/wav/test.wav";
+
+        let currently_playing = Arc::clone(&self.currently_playing);
+        player.append(rodio::source::EmptyCallback::new(Box::new(move || {
+            let mut lock = currently_playing.lock().unwrap();
+            *lock = Some(id);
+        })));
+
+        let audio_file = BufReader::new(fs::File::open(WAV_FILE_PATH)?);
+        let source = rodio::Decoder::try_from(audio_file).expect("Failed to decode audio file");
+        player.append(source);
+
+        Ok(())
+    }
+
+    pub fn search_song(&self, query: String) -> Vec<(f64, u32)> {
+        let possible = self
+            .songs
+            .iter()
+            .filter_map(|a| a.id.map(|i| (a.name.clone(), i)));
+
+        search(&query, possible, 10)
+    }
+
+    pub fn get_song_by_id(&self, id: u32) -> Option<&SongInfo> {
+        self.song_indices
             .get(&id)
             .and_then(|&idx| self.songs.get(idx))
-            .ok_or(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "No song with this id exists",
-            ))?;
+    }
 
-        let duration_str = crate::util::time_util::seconds_to_base60_string(song.duration);
-        println!(
-            "Now playing (00:00/{duration_str}): {0} ({1}) by {2}",
-            song.name, song.album, song.artist
-        );
-        Ok(())
+    pub fn get_playlist_by_id(&self, id: u32) -> Option<&PlaylistInfo> {
+        self.playlist_indices
+            .get(&id)
+            .and_then(|&idx| self.playlists.get(idx))
     }
 
     pub fn sort(&mut self) {
