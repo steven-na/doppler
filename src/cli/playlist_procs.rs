@@ -231,11 +231,13 @@ pub mod playlist {
             let songs = dinfo.get_playlist_by_id(id);
             match songs {
                 Some(songs) => {
+                    player.clear();
                     let songs = songs.dynamic_iter();
                     songs.for_each(|id| match dinfo.enqueue_song(id, player) {
                         Ok(()) => (),
                         Err(err) => println!("Failed to enqueue song ({})", err),
                     });
+                    player.play();
                 }
                 None => println!("No playlist with this id exists"),
             }
@@ -249,12 +251,14 @@ pub mod playlist {
             let songs = dinfo.get_playlist_by_id(id);
             match songs {
                 Some(songs) => {
+                    player.clear();
                     let mut songs = songs.dynamic_iter();
                     songs.shuffle();
                     songs.for_each(|id| match dinfo.enqueue_song(id, player) {
                         Ok(()) => (),
                         Err(err) => println!("Failed to enqueue song ({})", err),
                     });
+                    player.play();
                 }
                 None => println!("No playlist with this id exists"),
             }
