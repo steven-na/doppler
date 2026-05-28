@@ -73,6 +73,55 @@ pub mod song {
         }
     }
 
+    pub fn status(dinfo: &mut DopplerInfo, player: &rodio::Player) {
+        match *dinfo.currently_playing.lock().unwrap() {
+            Some(id) => match dinfo.get_song_by_id(id) {
+                Some(song) => {
+                    let duration_str =
+                        crate::util::time_util::seconds_to_base60_string(song.duration);
+
+                    let playback_time = player.get_pos().as_secs() as u32;
+                    let playback_time =
+                        crate::util::time_util::seconds_to_base60_string(playback_time);
+
+                    let now_playing = if player.is_paused() {
+                        "Paused"
+                    } else {
+                        "Now Playing"
+                    };
+                    println!("{now_playing} ({playback_time}/{duration_str}): {}", song);
+                }
+                None => println!("Failed to get current song"),
+            },
+            None => println!("No song currently playing"),
+        }
+    }
+
+    pub fn skip(player: &rodio::Player) {
+        if player.len() == 0 {
+            println!("No songs in queue, stopping playback")
+        } else {
+            println!("Skipping song")
+        }
+        player.skip_one();
+    }
+
+    pub fn enqueue(dinfo: &mut DopplerInfo, c: &mut ProgramState, player: &rodio::Player) {
+        if c.selected_id.is_none() {
+            println!("No song selected");
+            return;
+        }
+        if let Some(id) = c.selected_id {
+            if let Err(e) = dinfo.enqueue_song(id, player) {
+                println!("Failed to enqueue song ({})", e);
+            } else {
+                if let Some(song) = dinfo.get_song_by_id(id) {
+                    println!("Enqueued {}", song);
+                }
+            }
+        }
+    }
+
     pub fn remove(dinfo: &mut DopplerInfo, c: &mut ProgramState) {
         if let Some(id) = c.selected_id {
             match dinfo.remove_song(id) {
@@ -166,14 +215,37 @@ pub mod song {
         });
     }
 
+    pub fn select_search(dinfo: &DopplerInfo, c: &mut ProgramState) {
+        let query = get_input(Some("Select Search> ".to_string()));
+        let matches = dinfo.search_song(query);
+
+        match matches.last() {
+            Some(&(_, id)) => {
+                if let Some(song) = dinfo.get_song_by_id(id) {
+                    println!("Selected {}", song);
+                    c.selected_id = Some(id);
+                } else {
+                    println!("Failed to get song");
+                }
+            }
+            None => println!("No matches found"),
+        }
+    }
+
     pub fn help() {
         println!("Song help:");
         print_help("(p)lay", "play selected song");
-        print_help("(x)un/pause", "toggle paused state");
+        print_help("(e)nqueue", "enqueue selected song");
+        print_help("s(k)ip", "skip current song");
+        print_help("x|pause", "toggle paused state");
         print_help("(a)dd", "adds a song to the system.");
         print_help("(l)ist", "list all songs");
         print_help("(s)elect", "select a song for updating or removal");
         print_help("(ss)earch", "search for a song");
+        print_help(
+            "(s)elect (ss)earch",
+            "search for a song and select the top result",
+        );
         print_help("c|update", "update fields for selected song");
         print_help(
             "(r)emove",
@@ -181,5 +253,24 @@ pub mod song {
         );
         print_help("(w)rite", "write changes to file");
         print_help("(pl)aylist", "enter playlist edit mode");
+    }
+
+    pub fn volume(player: &rodio::Player) {
+        let cur: u32 = (player.volume() * 100.0) as u32;
+        let inp = get_input(Some(format!("0-200 [cur:{cur}]> ")))
+            .as_str()
+            .trim()
+            .parse::<u32>();
+        match inp {
+            Ok(value) => {
+                if value > 200 {
+                    println!("Volume too high!");
+                    return;
+                }
+                player.set_volume(value as f32 / 100.0);
+                println!("Set volume to {}", value);
+            }
+            Err(err) => println!("Failed to get input volume ({})", err),
+        }
     }
 }

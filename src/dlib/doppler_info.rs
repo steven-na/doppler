@@ -57,14 +57,24 @@ impl DopplerInfo {
     }
 
     pub fn play_song(&mut self, id: u32, player: &rodio::Player) -> std::io::Result<()> {
-        let _song = self.get_song_by_id(id).ok_or(std::io::Error::new(
+        let song = self.get_song_by_id(id).ok_or(std::io::Error::new(
             std::io::ErrorKind::NotFound,
             "No song with this id exists",
         ))?;
 
-        const WAV_FILE_PATH: &str = "./data/wav/test.wav";
+        // const WAV_FILE_PATH: &str = "./data/wav/test.wav";
+        // let path = WAV_FILE_PATH;
+        let path = match &song.filename {
+            Some(f) => f,
+            None => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "Song has no file associated",
+                ));
+            }
+        };
 
-        let audio_file = BufReader::new(fs::File::open(WAV_FILE_PATH)?);
+        let audio_file = BufReader::new(fs::File::open(path)?);
         let source = rodio::Decoder::try_from(audio_file).expect("Failed to decode audio file");
 
         player.clear();
@@ -83,22 +93,45 @@ impl DopplerInfo {
     }
 
     pub fn enqueue_song(&mut self, id: u32, player: &rodio::Player) -> std::io::Result<()> {
-        let _song = self.get_song_by_id(id).ok_or(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            "No song with this id exists",
-        ))?;
+        let song = self
+            .get_song_by_id(id)
+            .ok_or(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "No song with this id exists",
+            ))?
+            .clone();
 
-        const WAV_FILE_PATH: &str = "./data/wav/test.wav";
+        // const WAV_FILE_PATH: &str = "./data/wav/test.wav";
+        // let path = WAV_FILE_PATH;
+        let path = match &song.filename {
+            Some(f) => f,
+            None => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "Song has no file associated",
+                ));
+            }
+        };
+
+        let audio_file = BufReader::new(fs::File::open(path)?);
+        let source = rodio::Decoder::try_from(audio_file).expect("Failed to decode audio file");
 
         let currently_playing = Arc::clone(&self.currently_playing);
         player.append(rodio::source::EmptyCallback::new(Box::new(move || {
             let mut lock = currently_playing.lock().unwrap();
             *lock = Some(id);
+
+            let duration_str = crate::util::time_util::seconds_to_base60_string(song.duration);
+            println!("\nNow playing (0:00/{duration_str}): {}", song);
         })));
 
-        let audio_file = BufReader::new(fs::File::open(WAV_FILE_PATH)?);
-        let source = rodio::Decoder::try_from(audio_file).expect("Failed to decode audio file");
         player.append(source);
+
+        let currently_playing = Arc::clone(&self.currently_playing);
+        player.append(rodio::source::EmptyCallback::new(Box::new(move || {
+            let mut lock = currently_playing.lock().unwrap();
+            *lock = None;
+        })));
 
         Ok(())
     }

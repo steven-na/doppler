@@ -68,37 +68,28 @@ pub mod command_parser {
             "a" | "add" => song::add(dinfo),
             "s" | "select" => song::select(dinfo, c),
             "p" | "play" => song::play(dinfo, c, player),
+            "k" | "skip" => song::skip(player),
+            "e" | "enqueue" => song::enqueue(dinfo, c, player),
             "r" | "remove" => song::remove(dinfo, c),
             "c" | "update" => song::update(dinfo, c),
             "l" | "list" => song::list(dinfo),
             "w" | "write" => write_to_files(dinfo),
             "h" | "?" | "help" => song::help(),
-            "e" | "exit" => {
+            "exit" => {
                 println!("Exiting...");
                 return Ok(CommandOutcome::Exit);
             }
             "ss" | "search" => song::search(dinfo),
-            "x" => {
+            "sss" | "ssearch" => song::select_search(dinfo, c),
+            "x" | "pause" => {
                 if player.is_paused() {
                     player.play();
                 } else {
                     player.pause();
                 }
             }
-            "status" => match *dinfo.currently_playing.lock().unwrap() {
-                Some(id) => match dinfo.get_song_by_id(id) {
-                    Some(song) => {
-                        let duration_str =
-                            crate::util::time_util::seconds_to_base60_string(song.duration);
-                        let playback_time = player.get_pos().as_secs() as u32;
-                        let playback_time =
-                            crate::util::time_util::seconds_to_base60_string(playback_time);
-                        println!("Now playing ({playback_time}/{duration_str}): {}", song);
-                    }
-                    None => println!("Failed to get current song"),
-                },
-                None => println!("No song currently playing"),
-            },
+            "v" | "vol" | "volume" => song::volume(player),
+            "status" => song::status(dinfo, player),
             "playlist" | "pl" => match handle_playlist(dinfo, player) {
                 Ok(()) => println!("Exiting playlist mode with success"),
                 Err(err) => {
