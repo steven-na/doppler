@@ -84,7 +84,7 @@ pub mod playlist {
 
             loop {
                 let inp = get_input(Some("$ ".to_string()));
-                if inp.trim() == "list" {
+                if let "list" | "ls" | "l" = inp.trim() {
                     println!("idx|song");
                     p.songs.iter().enumerate().for_each(|(i, id)| {
                         if let Some(s) = dinfo

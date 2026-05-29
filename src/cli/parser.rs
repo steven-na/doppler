@@ -72,7 +72,7 @@ pub mod command_parser {
             "e" | "enqueue" => song::enqueue(dinfo, c, player),
             "r" | "remove" => song::remove(dinfo, c),
             "c" | "update" => song::update(dinfo, c),
-            "l" | "list" => song::list(dinfo),
+            "l" | "ls" | "list" => song::list(dinfo),
             "w" | "write" => write_to_files(dinfo),
             "h" | "?" | "help" => song::help(),
             "exit" => {
@@ -118,7 +118,7 @@ pub mod command_parser {
                 "u" | "update" => playlist::update(dinfo, &c),
                 "s" | "select" => playlist::select(dinfo, &mut c),
                 "r" | "remove" => playlist::remove(dinfo, &c),
-                "l" | "list" => playlist::list(dinfo),
+                "l" | "ls" | "list" => playlist::list(dinfo),
                 "h" | "?" | "help" => playlist::help(),
                 "as" | "addsongs" => playlist::add_songs(dinfo, &c),
                 _ => break,
