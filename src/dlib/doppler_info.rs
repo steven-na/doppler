@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
-use std::fs;
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::sync::{Arc, Mutex};
+use std::{fs, io};
 
 use crate::dlib::{playlist::*, song::*};
 use crate::util::search_utli::search;
@@ -27,7 +27,7 @@ pub struct DopplerInfo {
 }
 
 impl DopplerInfo {
-    pub fn new() -> std::io::Result<Self> {
+    pub fn new() -> io::Result<Self> {
         let mut songs = Self::read_songs_from_file()?;
         songs.iter_mut().for_each(|s| {
             s.file_entry_up_to_date = true;
@@ -56,7 +56,7 @@ impl DopplerInfo {
         })
     }
 
-    pub fn play_song(&mut self, id: u32, player: &rodio::Player) -> std::io::Result<()> {
+    pub fn play_song(&mut self, id: u32, player: &rodio::Player) -> io::Result<()> {
         let song = self.get_song_by_id(id).ok_or(std::io::Error::new(
             std::io::ErrorKind::NotFound,
             "No song with this id exists",
@@ -90,7 +90,7 @@ impl DopplerInfo {
         Ok(())
     }
 
-    pub fn enqueue_song(&mut self, id: u32, player: &rodio::Player) -> std::io::Result<()> {
+    pub fn enqueue_song(&mut self, id: u32, player: &rodio::Player) -> io::Result<()> {
         let song = self
             .get_song_by_id(id)
             .ok_or(std::io::Error::new(
@@ -144,6 +144,24 @@ impl DopplerInfo {
         Ok(())
     }
 
+    pub fn play_playlist(&mut self, id: u32, player: &rodio::Player) -> io::Result<()> {
+        player.clear();
+        let ids = match self.get_playlist_by_id(id) {
+            Some(p) => p.songs.to_vec(),
+            None => {
+                return Err(io::Error::new(
+                    io::ErrorKind::NotFound,
+                    "Playlist not found",
+                ));
+            }
+        };
+
+        ids.iter().for_each(|&id| {
+            let _ = self.enqueue_song(id, player);
+        });
+        Ok(())
+    }
+
     pub fn search_song(&self, query: String) -> Vec<(f64, u32)> {
         let possible = self
             .songs
@@ -193,7 +211,7 @@ impl DopplerInfo {
         map
     }
 
-    fn read_songs_from_file() -> std::io::Result<Vec<SongInfo>> {
+    fn read_songs_from_file() -> io::Result<Vec<SongInfo>> {
         let song_file = fs::OpenOptions::new().read(true).open(SONGS_FILE_PATH)?;
 
         let mut reader = BufReader::new(&song_file);
@@ -212,7 +230,7 @@ impl DopplerInfo {
         Ok(songs)
     }
 
-    fn read_playlists_from_file() -> std::io::Result<Vec<PlaylistInfo>> {
+    fn read_playlists_from_file() -> io::Result<Vec<PlaylistInfo>> {
         let playlist_file = fs::OpenOptions::new()
             .read(true)
             .open(PLAYLISTS_FILE_PATH)?;
@@ -233,7 +251,7 @@ impl DopplerInfo {
         Ok(playlists)
     }
 
-    pub fn add_song(&mut self, song: SongInfo) -> std::io::Result<()> {
+    pub fn add_song(&mut self, song: SongInfo) -> io::Result<()> {
         match song.id {
             Some(i) => {
                 if i < self.max_song_id.unwrap_or(0)
@@ -267,7 +285,7 @@ impl DopplerInfo {
         Ok(())
     }
 
-    pub fn add_playlist(&mut self, playlist: PlaylistInfo) -> std::io::Result<()> {
+    pub fn add_playlist(&mut self, playlist: PlaylistInfo) -> io::Result<()> {
         match playlist.id {
             Some(i) => {
                 if i < self.max_playlist_id.unwrap_or(0)
@@ -301,7 +319,7 @@ impl DopplerInfo {
         Ok(())
     }
 
-    pub fn remove_song(&mut self, id: u32) -> std::io::Result<()> {
+    pub fn remove_song(&mut self, id: u32) -> io::Result<()> {
         if !self.songs.iter().any(|s| match s.id {
             Some(o_id) => id == o_id,
             None => false,
@@ -321,7 +339,7 @@ impl DopplerInfo {
         Ok(())
     }
 
-    pub fn remove_playlist(&mut self, id: u32) -> std::io::Result<()> {
+    pub fn remove_playlist(&mut self, id: u32) -> io::Result<()> {
         if !self.playlists.iter().any(|s| match s.id {
             Some(o_id) => id == o_id,
             None => false,
@@ -341,7 +359,7 @@ impl DopplerInfo {
         Ok(())
     }
 
-    pub fn update_song(&mut self, song: SongInfo) -> std::io::Result<()> {
+    pub fn update_song(&mut self, song: SongInfo) -> io::Result<()> {
         let id = match song.id {
             Some(i) => i,
             None => {
@@ -367,7 +385,7 @@ impl DopplerInfo {
         Ok(())
     }
 
-    pub fn update_playlist(&mut self, playlist: PlaylistInfo) -> std::io::Result<()> {
+    pub fn update_playlist(&mut self, playlist: PlaylistInfo) -> io::Result<()> {
         let id = match playlist.id {
             Some(i) => i,
             None => {
@@ -393,7 +411,7 @@ impl DopplerInfo {
         Ok(())
     }
 
-    pub fn update_songs_file(&mut self) -> std::io::Result<u32> {
+    pub fn update_songs_file(&mut self) -> io::Result<u32> {
         let mut songs = Self::read_songs_from_file()?;
         songs.retain(|s| self.songs.iter().any(|s2| s.id != s2.id));
         songs.into_iter().for_each(|s| {
@@ -453,7 +471,7 @@ impl DopplerInfo {
         Ok(count)
     }
 
-    pub fn update_playlist_file(&mut self) -> std::io::Result<u32> {
+    pub fn update_playlist_file(&mut self) -> io::Result<u32> {
         let temp_file_path = format!("{}.temp", PLAYLISTS_FILE_PATH);
         let temp_playlist_file = fs::OpenOptions::new()
             .write(true)

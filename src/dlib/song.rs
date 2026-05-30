@@ -30,14 +30,7 @@ impl SongInfo {
 
 impl fmt::Display for SongInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "\x1b[1m{}\x1b[0m on \x1b[3m{}\x1b[0m by {} ({})",
-            self.name,
-            self.album,
-            self.artist,
-            crate::util::time_util::seconds_to_base60_string(self.duration)
-        )
+        write!(f, "{} on {} by {}", self.name, self.album, self.artist,)
     }
 }
 
