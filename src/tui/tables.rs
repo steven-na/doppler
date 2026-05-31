@@ -29,6 +29,10 @@ impl TableData {
             .selected()
             .and_then(|idx| self.rows.get(idx).map(|(id, _)| *id))
     }
+
+    pub fn selected_index(&self) -> Option<usize> {
+        self.state.borrow().selected()
+    }
 }
 
 pub fn draw_table(

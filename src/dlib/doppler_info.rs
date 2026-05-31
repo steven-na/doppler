@@ -183,7 +183,6 @@ impl DopplerInfo {
             self.app_notifier.clone(),
         );
 
-        // Store the iterator
         let mut lock = self.enqueued_playlist.lock().unwrap();
         *lock = Some(pi);
 
@@ -212,12 +211,24 @@ impl DopplerInfo {
             .collect()
     }
 
-    pub fn search_song(&self, query: String) -> Vec<(f64, u32)> {
+    pub fn filter_songs(&self, query: String) -> Vec<SongInfo> {
         let songs = self.songs.read().unwrap();
         let possible = songs
             .iter()
             .filter_map(|a| a.id.map(|i| (a.name.clone(), i)));
-        search(&query, possible, 10)
+
+        search(&query, possible, usize::MAX)
+            .iter()
+            .filter_map(|&(_, song_id)| self.get_song_by_id(song_id))
+            .collect()
+    }
+
+    pub fn search_song(&self, query: String, limit: Option<usize>) -> Vec<(f64, u32)> {
+        let songs = self.songs.read().unwrap();
+        let possible = songs
+            .iter()
+            .filter_map(|a| a.id.map(|i| (a.name.clone(), i)));
+        search(&query, possible, limit.unwrap_or(usize::MAX))
     }
 
     pub fn get_song_by_id(&self, id: u32) -> Option<SongInfo> {
@@ -230,6 +241,12 @@ impl DopplerInfo {
         self.playlist_indices
             .get(&id)
             .and_then(|&idx| self.playlists.get(idx))
+    }
+
+    pub fn get_playlist_by_id_mut(&mut self, id: u32) -> Option<&mut PlaylistInfo> {
+        self.playlist_indices
+            .get(&id)
+            .and_then(|&idx| self.playlists.get_mut(idx))
     }
 
     pub fn get_song_progress(&self) -> u32 {

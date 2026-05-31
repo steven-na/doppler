@@ -12,7 +12,7 @@ pub const MAX_ALLOWED_SONG_LEN: usize = 50;
 
 use super::tables::{TableData, draw_table};
 use crate::{
-    dlib::doppler_info::DopplerInfo,
+    dlib::{doppler_info::DopplerInfo, song::SongInfo},
     util::{
         print_util::{seek_bar_string, truncate_string_and_add_suffix},
         time_util::seconds_to_base60_string,
@@ -22,6 +22,7 @@ use crate::{
 enum CurrentMenu {
     Songs,
     Playlists,
+    PlaylistEditor,
     Queue,
 }
 
@@ -36,14 +37,41 @@ enum ScrollDirection {
     Down,
 }
 
+enum TextInputDestination {
+    Search,
+    SongName,
+    SongAlbum,
+    SongArtist,
+    SongDuration,
+    PlaylistName,
+}
+
+struct AppTextInputs {
+    search_query: String,
+    song_name: String,
+    song_album: String,
+    song_artist: String,
+    song_duration: (String, Option<u32>),
+    playlist_name: String,
+}
+
 pub struct App {
     event_receiver: mpsc::Receiver<AppEvent>,
     should_exit: bool,
+
     queue_open: bool,
+    editing_playlist: bool,
     current_menu: CurrentMenu,
+
+    text_input_queue: Vec<TextInputDestination>,
+    text_inputs: AppTextInputs,
+    messages: Vec<(String, u32)>,
+
     dinfo: DopplerInfo,
+
     song_table_state: TableData,
     playlist_table_state: TableData,
+    playlist_editor_table_state: TableData,
     queue_table_state: TableData,
 }
 
@@ -77,13 +105,28 @@ impl App {
             event_receiver: event_rx,
             should_exit: false,
             queue_open: false,
+            editing_playlist: false,
             current_menu: CurrentMenu::Songs,
+            text_input_queue: Vec::new(),
+            text_inputs: AppTextInputs {
+                search_query: String::new(),
+                song_name: String::new(),
+                song_album: String::new(),
+                song_artist: String::new(),
+                song_duration: (String::new(), None),
+                playlist_name: String::new(),
+            },
+            messages: Vec::new(),
             dinfo,
             song_table_state: TableData {
                 state: RefCell::new(table_state),
                 rows: Vec::new(),
             },
             playlist_table_state: TableData {
+                state: RefCell::new(table_state),
+                rows: Vec::new(),
+            },
+            playlist_editor_table_state: TableData {
                 state: RefCell::new(table_state),
                 rows: Vec::new(),
             },
@@ -95,29 +138,46 @@ impl App {
     }
 
     pub fn main_loop(&mut self, term: &mut ratatui::DefaultTerminal) -> io::Result<()> {
-        self.song_table_state
-            .rebuild(self.dinfo.songs.read().unwrap().iter());
+        self.rebuild_songs();
         self.playlist_table_state
             .rebuild(self.dinfo.playlists.iter());
 
         while !self.should_exit {
-            if self
-                .dinfo
-                .queue_dirty
-                .swap(false, std::sync::atomic::Ordering::Relaxed)
-            {
-                self.queue_table_state
-                    .rebuild(self.dinfo.queue_entries().iter());
-            }
+            // if self
+            //     .dinfo
+            //     .queue_dirty
+            //     .swap(false, std::sync::atomic::Ordering::Relaxed)
+            // {
+            //     self.queue_table_state
+            //         .rebuild(self.dinfo.queue_entries().iter());
+            // }
+
+            self.messages.retain_mut(|(_, life)| {
+                *life = life.saturating_sub(1);
+                *life > 0
+            });
 
             // Draw
             let _ = term.draw(|frame| {
                 self.draw(frame);
             });
 
+            // Handle channel data
             match self.event_receiver.recv().unwrap() {
-                AppEvent::Input(k) => self.handle_input(k),
-                AppEvent::Song => (),
+                AppEvent::Input(k) => {
+                    self.handle_input(k);
+
+                    self.rebuild_songs();
+                    self.playlist_table_state
+                        .rebuild(self.dinfo.playlists.iter());
+                    if self.editing_playlist {
+                        self.rebuild_playlist_editor();
+                    }
+                }
+                AppEvent::Song => {
+                    self.queue_table_state
+                        .rebuild(self.dinfo.queue_entries().iter());
+                }
                 AppEvent::Update => (),
             }
         }
@@ -127,28 +187,91 @@ impl App {
 
     fn handle_input(&mut self, k: KeyEvent) {
         if k.is_press() {
-            match k.code {
-                KeyCode::Char(' ') if matches!(self.current_menu, CurrentMenu::Songs) => {
-                    self.play_song();
+            if let Some(dest) = self.text_input_queue.first() {
+                let inputs = &mut self.text_inputs;
+                let dest_str = match dest {
+                    TextInputDestination::Search => &mut inputs.search_query,
+                    TextInputDestination::SongName => &mut inputs.song_name,
+                    TextInputDestination::SongAlbum => &mut inputs.song_album,
+                    TextInputDestination::SongArtist => &mut inputs.song_artist,
+                    TextInputDestination::SongDuration => &mut inputs.song_duration.0,
+                    TextInputDestination::PlaylistName => &mut inputs.playlist_name,
+                };
+                if let Some(ch) = k.code.as_char() {
+                    if matches!(dest, TextInputDestination::Search) {
+                        self.song_table_state.state.borrow_mut().select_first();
+                    }
+                    dest_str.push(ch);
                 }
-                KeyCode::Char('e') if matches!(self.current_menu, CurrentMenu::Songs) => {
-                    self.enqueue_song();
+                match k.code {
+                    KeyCode::Esc if matches!(dest, TextInputDestination::Search) => {
+                        dest_str.clear();
+                    }
+                    KeyCode::Enter => {
+                        if matches!(dest, TextInputDestination::SongDuration) {
+                            let n = inputs.song_duration.0.parse::<u32>();
+                            if n.is_err() {
+                                return;
+                            }
+                            inputs.song_duration.1 = n.ok();
+                        }
+                        let _ = self.text_input_queue.remove(0);
+                    }
+                    KeyCode::Backspace => {
+                        dest_str.pop();
+                    }
+                    _ => (),
                 }
-                KeyCode::Char(' ') if matches!(self.current_menu, CurrentMenu::Playlists) => {
-                    self.play_playlist();
+            } else {
+                match self.current_menu {
+                    // Song only
+                    CurrentMenu::Songs => match k.code {
+                        KeyCode::Char(' ') if self.editing_playlist => self.add_playlist_song(),
+                        KeyCode::Char('i') if self.editing_playlist => self.insert_playlist_song(),
+                        KeyCode::Char(' ') => {
+                            self.play_song();
+                        }
+                        KeyCode::Char('e') => {
+                            self.enqueue_song();
+                        }
+                        KeyCode::Char('/') if self.text_input_queue.is_empty() => {
+                            self.text_input_queue.push(TextInputDestination::Search);
+                        }
+                        KeyCode::Esc => self.text_inputs.search_query.clear(),
+                        _ => (),
+                    },
+                    // Playlist only
+                    CurrentMenu::Playlists => match k.code {
+                        KeyCode::Char(' ') => {
+                            self.play_playlist();
+                        }
+                        KeyCode::Char('r') => {
+                            self.shuffle_play_playlist();
+                        }
+                        _ => (),
+                    },
+                    CurrentMenu::PlaylistEditor => match k.code {
+                        KeyCode::Char('r') if self.editing_playlist => self.remove_playlist_song(),
+                        _ => (),
+                    },
+                    // General
+                    _ => (),
                 }
-                KeyCode::Char('r') if matches!(self.current_menu, CurrentMenu::Playlists) => {
-                    self.shuffle_play_playlist();
+                match k.code {
+                    KeyCode::Char('c') if k.modifiers.contains(KeyModifiers::CONTROL) => {
+                        self.should_exit = true
+                    }
+                    KeyCode::Char('w') if k.modifiers.contains(KeyModifiers::CONTROL) => {
+                        self.write_to_files()
+                    }
+                    KeyCode::Tab => self.cycle_menu(),
+                    KeyCode::Char('k') => self.dinfo.skip_song(),
+                    KeyCode::Char('q') => self.toggle_queue(),
+                    KeyCode::Char('f') => self.toggle_playlist_edit(),
+                    KeyCode::Up => self.scroll_table(ScrollDirection::Up),
+                    KeyCode::Down => self.scroll_table(ScrollDirection::Down),
+                    _ => (),
                 }
-                KeyCode::Char('c') if k.modifiers.contains(KeyModifiers::CONTROL) => {
-                    self.should_exit = true;
-                }
-                KeyCode::Tab => self.cycle_menu(),
-                KeyCode::Char('k') => self.dinfo.skip_song(),
-                KeyCode::Char('q') => self.toggle_queue(),
-                KeyCode::Up => self.scroll_table(ScrollDirection::Up),
-                KeyCode::Down => self.scroll_table(ScrollDirection::Down),
-                _ => (),
             }
         }
     }
@@ -177,6 +300,71 @@ impl App {
         }
     }
 
+    fn rebuild_playlist_editor(&mut self) {
+        if let Some(playlist_id) = self.playlist_table_state.selected_id()
+            && let Some(p) = self.dinfo.get_playlist_by_id(playlist_id)
+        {
+            let ids: Vec<SongInfo> = p
+                .songs
+                .iter()
+                .filter_map(|&id| self.dinfo.get_song_by_id(id))
+                .collect();
+            self.playlist_editor_table_state.rebuild(ids.iter());
+        }
+    }
+
+    fn rebuild_songs(&mut self) {
+        let songs = if !self.text_inputs.search_query.is_empty() {
+            self.dinfo
+                .filter_songs(self.text_inputs.search_query.clone())
+                .clone()
+        } else {
+            self.dinfo.songs.read().unwrap().clone()
+        };
+        self.song_table_state.rebuild(songs.iter().rev());
+    }
+
+    fn add_playlist_song(&mut self) {
+        if let Some(playlist_id) = self.playlist_table_state.selected_id()
+            && let Some(p) = self.dinfo.get_playlist_by_id_mut(playlist_id)
+            && let Some(song_id) = self.song_table_state.selected_id()
+        {
+            p.force_add_song(song_id);
+        }
+    }
+
+    fn insert_playlist_song(&mut self) {
+        if let Some(playlist_id) = self.playlist_table_state.selected_id()
+            && let Some(idx) = self.playlist_editor_table_state.selected_index()
+            && let Some(p) = self.dinfo.get_playlist_by_id_mut(playlist_id)
+            && let Some(song_id) = self.song_table_state.selected_id()
+        {
+            let _ = p.insert_song(idx, song_id);
+        }
+    }
+
+    fn remove_playlist_song(&mut self) {
+        if let Some(playlist_id) = self.playlist_table_state.selected_id()
+            && let Some(p) = self.dinfo.get_playlist_by_id_mut(playlist_id)
+            && let Some(index) = self.playlist_editor_table_state.selected_index()
+        {
+            let _ = p.remove_song_by_index(index);
+        }
+    }
+
+    fn write_to_files(&mut self) {
+        let song_outcome = self.dinfo.update_songs_file();
+        self.emit_message(match song_outcome {
+            Ok(n) => format!("Wrote {n} songs to file"),
+            Err(_) => "Failed to write songs to file".to_string(),
+        });
+        let pl_outcome = self.dinfo.update_playlist_file();
+        self.emit_message(match pl_outcome {
+            Ok(n) => format!("Wrote {n} playlists to file"),
+            Err(_) => "Failed to write playlists to file".to_string(),
+        });
+    }
+
     fn toggle_queue(&mut self) {
         if self.queue_open {
             self.queue_open = false;
@@ -185,15 +373,33 @@ impl App {
             }
         } else {
             self.queue_open = true;
-            self.current_menu = CurrentMenu::Queue;
+            self.editing_playlist = false;
+        }
+    }
+
+    fn toggle_playlist_edit(&mut self) {
+        if self.editing_playlist {
+            self.editing_playlist = false;
+            if matches!(self.current_menu, CurrentMenu::PlaylistEditor) {
+                self.current_menu = CurrentMenu::Songs;
+            }
+        } else {
+            self.rebuild_playlist_editor();
+            self.playlist_editor_table_state
+                .state
+                .borrow_mut()
+                .select_first();
+            self.editing_playlist = true;
+            self.queue_open = false;
         }
     }
 
     fn scroll_table(&mut self, sd: ScrollDirection) {
         let mut scroll_target = match self.current_menu {
             CurrentMenu::Songs => &mut self.song_table_state,
-            CurrentMenu::Playlists => &mut self.playlist_table_state,
+            CurrentMenu::PlaylistEditor => &mut self.playlist_editor_table_state,
             CurrentMenu::Queue => &mut self.queue_table_state,
+            CurrentMenu::Playlists => &mut self.playlist_table_state,
         }
         .state
         .borrow_mut();
@@ -207,10 +413,15 @@ impl App {
     fn cycle_menu(&mut self) {
         self.current_menu = match self.current_menu {
             CurrentMenu::Songs if self.queue_open => CurrentMenu::Queue,
+            CurrentMenu::Songs if self.editing_playlist => CurrentMenu::PlaylistEditor,
             CurrentMenu::Songs => CurrentMenu::Playlists,
             CurrentMenu::Playlists => CurrentMenu::Songs,
-            CurrentMenu::Queue => CurrentMenu::Playlists,
+            CurrentMenu::Queue | CurrentMenu::PlaylistEditor => CurrentMenu::Playlists,
         };
+    }
+
+    fn emit_message(&mut self, msg: String) {
+        self.messages.push((msg, 100));
     }
 
     fn draw(&self, frame: &mut Frame) {
@@ -226,10 +437,16 @@ impl App {
             Constraint::Fill(1),
         ];
 
+        let query = if self.text_inputs.search_query.is_empty() {
+            "".to_string()
+        } else {
+            format!("<search:{}>", self.text_inputs.search_query)
+        };
+
         draw_table(
             area,
             buf,
-            "Songs",
+            format!("Songs {}", query).as_str(),
             selected,
             &self.song_table_state,
             &widths,
@@ -277,6 +494,37 @@ impl App {
             format!("({}, {}) Queue", qd_songs.len(), duration).as_str(),
             selected,
             &self.queue_table_state,
+            &widths,
+        );
+    }
+
+    fn draw_playlist_editor(&self, area: Rect, buf: &mut Buffer) {
+        let selected = matches!(self.current_menu, CurrentMenu::PlaylistEditor);
+        let widths = [
+            Constraint::Length(6),
+            Constraint::Length(MAX_ALLOWED_SONG_LEN as u16),
+            Constraint::Length(25),
+            Constraint::Fill(1),
+        ];
+
+        let title = if let Some(id) = self.playlist_table_state.selected_id()
+            && let Some(p) = self.dinfo.get_playlist_by_id(id)
+        {
+            format!(
+                "Editing {}{}",
+                if p.file_entry_up_to_date { "" } else { "*" },
+                p.name
+            )
+        } else {
+            "No playlist selected".to_string()
+        };
+
+        draw_table(
+            area,
+            buf,
+            &title,
+            selected,
+            &self.playlist_editor_table_state,
             &widths,
         );
     }
@@ -338,6 +586,22 @@ impl App {
         .centered()
         .render(block_inner, buf);
     }
+
+    fn draw_messages(&self, area: Rect, buf: &mut Buffer) {
+        let msg_block = ratatui::widgets::Block::bordered()
+            .border_type(ratatui::widgets::BorderType::Rounded)
+            .title(Line::from("Log"));
+        let block_inner = msg_block.inner(area);
+        msg_block.render(area, buf);
+        let max_msg = block_inner.height;
+        let words: Vec<Line> = self
+            .messages
+            .iter()
+            .map(|(s, _)| Line::from(s.as_str()))
+            .take(max_msg.into())
+            .collect();
+        Paragraph::new(words).render(block_inner, buf);
+    }
 }
 
 impl Widget for &App {
@@ -348,17 +612,34 @@ impl Widget for &App {
         let app_layout = Layout::vertical([Constraint::Fill(1), Constraint::Length(1)]);
         let content_layout = Layout::horizontal([
             Constraint::Percentage(20),
-            Constraint::Fill(1),
-            Constraint::Percentage(if self.queue_open { 25 } else { 0 }),
+            Constraint::Fill(2),
+            Constraint::Fill(if self.queue_open { 1 } else { 0 }),
+            Constraint::Fill(if self.editing_playlist { 2 } else { 0 }),
         ]);
-        let left_layout = Layout::vertical([Constraint::Length(7), Constraint::Fill(1)]);
+        let left_layout = Layout::vertical([
+            Constraint::Length(7),
+            Constraint::Fill(1),
+            Constraint::Length(if self.messages.is_empty() { 0 } else { 10 }),
+        ]);
         let [content_area, controls_area] = app_layout.areas(area);
-        let [left_area, song_area, queue_area] = content_layout.areas(content_area);
-        let [now_playing_area, playlist_area] = left_layout.areas(left_area);
+        let [left_area, song_area, queue_area, playlist_editor_area] =
+            content_layout.areas(content_area);
+        let [now_playing_area, playlist_area, message_area] = left_layout.areas(left_area);
 
-        Line::from("↑/↓ navigate | [tab] change pane | q queue | <ctrl-c> quit")
-            .dim()
-            .render(controls_area, buf);
+        let typing = if self.text_input_queue.is_empty() {
+            ""
+        } else {
+            "(Typing) | "
+        };
+        let bottom_line = format!(
+            "{}↑/↓ navigate | [tab] change pane | q queue | <ctrl-c> quit",
+            typing
+        );
+        Line::from(bottom_line).dim().render(controls_area, buf);
+
+        if !self.messages.is_empty() {
+            self.draw_messages(message_area, buf);
+        }
 
         self.draw_now_playing(now_playing_area, buf);
 
@@ -368,6 +649,8 @@ impl Widget for &App {
 
         if self.queue_open {
             self.draw_queue(queue_area, buf);
+        } else if self.editing_playlist {
+            self.draw_playlist_editor(playlist_editor_area, buf);
         }
     }
 }
