@@ -1,6 +1,12 @@
+use std::{
+    collections::HashMap,
+    fs,
+    io::{self, BufRead, BufReader},
+};
+
 use serde::{Deserialize, Serialize};
 
-use crate::dlib::playlist_iter::PlaylistIter;
+use crate::dlib::{doppler_info::PLAYLISTS_FILE_PATH, playlist_iter::PlaylistIter};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PlaylistInfo {
@@ -77,4 +83,34 @@ impl Default for PlaylistInfo {
     fn default() -> Self {
         Self::new()
     }
+}
+
+pub fn read_playlists_from_file() -> io::Result<Vec<PlaylistInfo>> {
+    let playlist_file = fs::OpenOptions::new()
+        .read(true)
+        .open(PLAYLISTS_FILE_PATH)?;
+    let mut reader = BufReader::new(&playlist_file);
+    let mut buf = String::new();
+    let mut playlists = Vec::new();
+    loop {
+        buf.clear();
+        let byte_count = reader.read_line(&mut buf)?;
+        if byte_count == 0 {
+            break;
+        }
+        if let Ok(pl) = serde_json::from_str::<PlaylistInfo>(&buf) {
+            playlists.push(pl);
+        }
+    }
+    Ok(playlists)
+}
+
+pub fn indices_from_playlist_list(v: &[PlaylistInfo]) -> HashMap<u32, usize> {
+    let mut map = HashMap::new();
+    v.iter().enumerate().for_each(|(idx, s)| {
+        if let Some(id) = s.id {
+            map.insert(id, idx);
+        };
+    });
+    map
 }

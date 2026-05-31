@@ -1,6 +1,13 @@
 use core::fmt;
+use std::{
+    collections::HashMap,
+    fs,
+    io::{self, BufRead, BufReader},
+};
 
 use serde::{Deserialize, Serialize};
+
+use super::doppler_info::SONGS_FILE_PATH;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SongInfo {
@@ -38,4 +45,32 @@ impl Default for SongInfo {
     fn default() -> Self {
         Self::new()
     }
+}
+
+pub fn read_songs_from_file() -> io::Result<Vec<SongInfo>> {
+    let song_file = fs::OpenOptions::new().read(true).open(SONGS_FILE_PATH)?;
+    let mut reader = BufReader::new(&song_file);
+    let mut buf = String::new();
+    let mut songs = Vec::new();
+    loop {
+        buf.clear();
+        let byte_count = reader.read_line(&mut buf)?;
+        if byte_count == 0 {
+            break;
+        }
+        if let Ok(song) = serde_json::from_str::<SongInfo>(&buf) {
+            songs.push(song);
+        }
+    }
+    Ok(songs)
+}
+
+pub fn indices_from_song_list(v: &[SongInfo]) -> HashMap<u32, usize> {
+    let mut map = HashMap::new();
+    v.iter().enumerate().for_each(|(idx, s)| {
+        if let Some(id) = s.id {
+            map.insert(id, idx);
+        };
+    });
+    map
 }

@@ -5,14 +5,14 @@ pub mod command_parser {
     };
     use std::io::Write;
 
-    pub fn main_loop(player: &rodio::Player) -> std::io::Result<()> {
-        let mut dinfo = DopplerInfo::new()?;
+    pub fn main_loop(player: rodio::Player) -> std::io::Result<()> {
+        let mut dinfo = DopplerInfo::new(player)?;
         let mut c: ProgramState = ProgramState::new();
         let mut prompt = Some("> ".to_string());
 
         println!("Welcome to Doppler. Type \"help\" for help");
 
-        while let Ok(i) = handle(get_input(prompt), &mut dinfo, &mut c, player) {
+        while let Ok(i) = handle(get_input(prompt), &mut dinfo, &mut c) {
             match i {
                 CommandOutcome::Carryon => (),
                 CommandOutcome::Exit => break,
@@ -62,14 +62,13 @@ pub mod command_parser {
         user_input: String,
         dinfo: &mut DopplerInfo,
         c: &mut ProgramState,
-        player: &rodio::Player,
     ) -> std::io::Result<CommandOutcome> {
         match user_input.as_str().trim() {
             "a" | "add" => song::add(dinfo),
             "s" | "select" => song::select(dinfo, c),
-            "p" | "play" => song::play(dinfo, c, player),
-            "k" | "skip" => song::skip(player),
-            "e" | "enqueue" => song::enqueue(dinfo, c, player),
+            "p" | "play" => song::play(dinfo, c),
+            "k" | "skip" => song::skip(),
+            "e" | "enqueue" => song::enqueue(dinfo, c),
             "r" | "remove" => song::remove(dinfo, c),
             "c" | "update" => song::update(dinfo, c),
             "l" | "ls" | "list" => song::list(dinfo),
@@ -81,21 +80,21 @@ pub mod command_parser {
             }
             "ss" | "search" => song::search(dinfo),
             "sss" | "ssearch" => song::select_search(dinfo, c),
-            "x" | "pause" => {
-                if player.is_paused() {
-                    player.play();
-                } else {
-                    player.pause();
-                }
-            }
-            "v" | "vol" | "volume" => song::volume(player),
-            "status" => song::status(dinfo, player),
-            "playlist" | "pl" => match handle_playlist(dinfo, player) {
-                Ok(()) => println!("Exiting playlist mode with success"),
-                Err(err) => {
-                    println!("Playlist interaction failed ({})", err);
-                }
-            },
+            // "x" | "pause" => {
+            //     if player.is_paused() {
+            //         player.play();
+            //     } else {
+            //         player.pause();
+            //     }
+            // }
+            // "v" | "vol" | "volume" => song::volume(player),
+            // "status" => song::status(dinfo, player),
+            // "playlist" | "pl" => match handle_playlist(dinfo, player) {
+            //     Ok(()) => println!("Exiting playlist mode with success"),
+            //     Err(err) => {
+            //         println!("Playlist interaction failed ({})", err);
+            //     }
+            // },
             _ => println!("Invalid input. try help or exit."),
         }
         Ok(CommandOutcome::Carryon)

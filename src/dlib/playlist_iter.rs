@@ -3,15 +3,15 @@ use std::collections::VecDeque;
 use rand::{rng, seq::SliceRandom};
 
 #[derive(Debug, PartialEq)]
-enum ItemType {
+pub enum ItemType {
     OriginalItem,
     DynamicItem,
 }
 
 #[derive(Debug)]
 pub struct PlaylistIter {
-    queue: VecDeque<(u32, ItemType)>,
-    last_song: Option<u32>,
+    pub queue: VecDeque<(u32, ItemType)>,
+    pub last_song: Option<u32>,
 }
 
 impl PlaylistIter {

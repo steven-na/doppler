@@ -52,13 +52,13 @@ pub mod song {
         }
     }
 
-    pub fn play(dinfo: &mut DopplerInfo, c: &mut ProgramState, player: &rodio::Player) {
+    pub fn play(dinfo: &mut DopplerInfo, c: &mut ProgramState) {
         if c.selected_id.is_none() {
             println!("No song selected");
             return;
         }
         if let Some(id) = c.selected_id {
-            if let Err(e) = dinfo.play_song(id, player) {
+            if let Err(e) = dinfo.play_song(id) {
                 println!("Failed to play song ({})", e);
             } else {
                 if let Some(song) = dinfo.get_song_by_id(id) {
@@ -73,7 +73,7 @@ pub mod song {
         }
     }
 
-    pub fn status(dinfo: &mut DopplerInfo, player: &rodio::Player) {
+    pub fn status(dinfo: &mut DopplerInfo) {
         match *dinfo.currently_playing.lock().unwrap() {
             Some(id) => match dinfo.get_song_by_id(id) {
                 Some(song) => {
@@ -106,13 +106,13 @@ pub mod song {
         player.skip_one();
     }
 
-    pub fn enqueue(dinfo: &mut DopplerInfo, c: &mut ProgramState, player: &rodio::Player) {
+    pub fn enqueue(dinfo: &mut DopplerInfo, c: &mut ProgramState) {
         if c.selected_id.is_none() {
             println!("No song selected");
             return;
         }
         if let Some(id) = c.selected_id {
-            if let Err(e) = dinfo.enqueue_song(id, player) {
+            if let Err(e) = dinfo.enqueue_song(id) {
                 println!("Failed to enqueue song ({})", e);
             } else {
                 if let Some(song) = dinfo.get_song_by_id(id) {

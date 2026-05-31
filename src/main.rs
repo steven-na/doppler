@@ -1,8 +1,7 @@
-use std::{env, io};
+use std::io;
 
 use crate::tui::app::App;
 
-pub mod cli;
 pub mod dlib;
 pub mod tui;
 pub mod util;
@@ -14,24 +13,7 @@ fn main() -> io::Result<()> {
     let player = rodio::Player::connect_new(handle.mixer());
     player.set_volume(0.1);
 
-    match env::args()
-        .collect::<Vec<String>>()
-        .get(1)
-        .expect("Must specity tui or cli")
-        .as_str()
-        .trim()
-    {
-        "tui" => tui_main(player),
-        "cli" => cli_main(&player),
-        _ => Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "Must specify tui or cli",
-        )),
-    }
-}
-
-fn cli_main(player: &rodio::Player) -> io::Result<()> {
-    cli::parser::command_parser::main_loop(player)
+    tui_main(player)
 }
 
 fn tui_main(player: rodio::Player) -> io::Result<()> {
