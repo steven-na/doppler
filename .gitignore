@@ -1,3 +1,5 @@
 /target
 /data/*
 !/data/keep.file
+/scripts/*
+!/scripts/*.sh
