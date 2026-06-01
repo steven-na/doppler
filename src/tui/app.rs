@@ -1,9 +1,9 @@
-use std::{cell::RefCell, io, sync::mpsc, thread, time::Duration};
+use std::{cell::RefCell, cmp::min, io, sync::mpsc, thread, time::Duration};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     prelude::*,
-    widgets::{Paragraph, TableState},
+    widgets::{Paragraph, TableState, Wrap},
 };
 
 pub const TABLE_SELECTED_STYLE: Style = Style::new().underlined().bold();
@@ -43,7 +43,8 @@ enum TextInputDestination {
     SongAlbum,
     SongArtist,
     SongDuration,
-    PlaylistName,
+    PlaylistNameUpdate,
+    PlaylistNameAdd,
 }
 
 struct AppTextInputs {
@@ -60,6 +61,7 @@ pub struct App {
     should_exit: bool,
 
     queue_open: bool,
+    lyrics_open: bool,
     editing_playlist: bool,
     current_menu: CurrentMenu,
 
@@ -106,6 +108,7 @@ impl App {
             event_receiver: event_rx,
             should_exit: false,
             queue_open: false,
+            lyrics_open: false,
             editing_playlist: false,
             current_menu: CurrentMenu::Songs,
             text_input_queue: Vec::new(),
@@ -191,7 +194,8 @@ impl App {
                     TextInputDestination::SongAlbum => &mut inputs.song_album,
                     TextInputDestination::SongArtist => &mut inputs.song_artist,
                     TextInputDestination::SongDuration => &mut inputs.song_duration.0,
-                    TextInputDestination::PlaylistName => &mut inputs.playlist_name,
+                    TextInputDestination::PlaylistNameUpdate
+                    | TextInputDestination::PlaylistNameAdd => &mut inputs.playlist_name,
                 };
                 if let Some(ch) = k.code.as_char() {
                     if matches!(dest, TextInputDestination::Search) {
@@ -221,8 +225,11 @@ impl App {
                                     }
                                 }
                             }
-                            TextInputDestination::PlaylistName => {
+                            TextInputDestination::PlaylistNameUpdate => {
                                 self.finish_edit_playlist();
+                            }
+                            TextInputDestination::PlaylistNameAdd => {
+                                self.finish_add_playlist();
                             }
                             _ => (),
                         }
@@ -278,6 +285,10 @@ impl App {
                             self.shuffle_play_playlist();
                             return;
                         }
+                        KeyCode::Char('a') => {
+                            self.start_add_playlist();
+                            return;
+                        }
                         _ => (),
                     },
                     CurrentMenu::PlaylistEditor => match k.code {
@@ -304,6 +315,7 @@ impl App {
                     KeyCode::Tab => self.cycle_menu(),
                     KeyCode::Char('k') => self.dinfo.skip_song(),
                     KeyCode::Char('Q') => self.toggle_queue(),
+                    KeyCode::Char('L') => self.lyrics_open = !self.lyrics_open,
                     KeyCode::Char('f') => self.toggle_playlist_edit(),
                     KeyCode::Up => self.scroll_table(ScrollDirection::Up),
                     KeyCode::Down => self.scroll_table(ScrollDirection::Down),
@@ -339,10 +351,17 @@ impl App {
             self.text_inputs.playlist_name = playlist.name.clone();
             self.text_input_queue.clear();
             self.text_input_queue
-                .push(TextInputDestination::PlaylistName);
+                .push(TextInputDestination::PlaylistNameUpdate);
         } else {
             self.emit_message("Failed to edit playlist".to_string());
         }
+    }
+
+    fn start_add_playlist(&mut self) {
+        self.text_inputs.playlist_name.clear();
+        self.text_input_queue.clear();
+        self.text_input_queue
+            .push(TextInputDestination::PlaylistNameAdd);
     }
 
     fn finish_edit_song(&mut self) {
@@ -383,6 +402,21 @@ impl App {
             }
             self.need_rebuild = true;
         }
+    }
+
+    fn finish_add_playlist(&mut self) {
+        let name = self.text_inputs.playlist_name.clone();
+        if name.is_empty() {
+            self.emit_message("Can't add playlist with no name".to_string());
+        }
+        match self.dinfo.add_playlist(PlaylistInfo {
+            name,
+            ..Default::default()
+        }) {
+            Ok(()) => self.emit_message("Added playlist".to_string()),
+            Err(err) => self.emit_message(format!("Failed to add playlist ({})", err)),
+        }
+        self.need_rebuild = true;
     }
 
     fn play_song(&mut self) {
@@ -591,7 +625,8 @@ impl App {
 
         let bottom_text = if matches!(
             self.text_input_queue.first(),
-            Some(TextInputDestination::PlaylistName)
+            Some(TextInputDestination::PlaylistNameUpdate)
+                | Some(TextInputDestination::PlaylistNameAdd)
         ) {
             format!("Playlist name: {}", self.text_inputs.playlist_name)
         } else {
@@ -731,6 +766,70 @@ impl App {
         .render(block_inner, buf);
     }
 
+    fn draw_lyrics(&self, area: Rect, buf: &mut Buffer) {
+        let ly_block = ratatui::widgets::Block::bordered()
+            .border_type(ratatui::widgets::BorderType::Rounded)
+            .title(Line::from("Lyrics"));
+        let block_inner = ly_block.inner(area);
+        ly_block.render(area, buf);
+        let block_width = block_inner.width as usize;
+        let block_height = block_inner.height as usize;
+
+        let lyrics = {
+            if let Some(current_song) = *self.dinfo.currently_playing.lock().unwrap() {
+                self.dinfo.get_lyrics_from_song_id(current_song)
+            } else {
+                None
+            }
+        };
+
+        const CURRENT_LYRIC_POS: usize = 1;
+        let mut is_synced = false;
+        let mut lyric_section_width = block_width;
+        let lyric = if let Some(l) = lyrics {
+            lyric_section_width = min(lyric_section_width, l.longest_lyric_in_song());
+            if l.is_synced {
+                is_synced = true;
+                l.get_lyrics_around_time(
+                    self.dinfo.get_song_progress(),
+                    CURRENT_LYRIC_POS,
+                    block_height,
+                )
+                .unwrap_or(vec!["Failed to get lyrics".to_string()])
+            } else {
+                l.lyrics.clone()
+            }
+        } else {
+            vec!["No lyrics associated".to_string()]
+        };
+
+        let [_, lyric_area, _] = Layout::horizontal([
+            Constraint::Fill(1),
+            Constraint::Length(lyric_section_width as u16),
+            Constraint::Fill(1),
+        ])
+        .areas(block_inner);
+
+        Paragraph::new(
+            lyric
+                .into_iter()
+                .enumerate()
+                .map(|(idx, s)| {
+                    if !is_synced {
+                        return Line::from(s);
+                    }
+                    if idx == CURRENT_LYRIC_POS {
+                        Line::from(s).bold()
+                    } else {
+                        Line::from(s).dim()
+                    }
+                })
+                .collect::<Vec<Line>>(),
+        )
+        .wrap(Wrap { trim: true })
+        .render(lyric_area, buf);
+    }
+
     fn draw_messages(&self, area: Rect, buf: &mut Buffer) {
         let msg_block = ratatui::widgets::Block::bordered()
             .border_type(ratatui::widgets::BorderType::Rounded)
@@ -765,10 +864,19 @@ impl Widget for &App {
             Constraint::Fill(1),
             Constraint::Length(if self.messages.is_empty() { 0 } else { 10 }),
         ]);
+        let song_and_lyric_layout = Layout::vertical([
+            Constraint::Fill(1),
+            Constraint::Length(if self.lyrics_open { 8 } else { 0 }),
+        ]);
         let [content_area, controls_area] = app_layout.areas(area);
-        let [left_area, song_area, queue_area, playlist_editor_area] =
-            content_layout.areas(content_area);
+        let [
+            left_area,
+            song_and_lyrics_area,
+            queue_area,
+            playlist_editor_area,
+        ] = content_layout.areas(content_area);
         let [now_playing_area, playlist_area, message_area] = left_layout.areas(left_area);
+        let [song_area, lyrics_area] = song_and_lyric_layout.areas(song_and_lyrics_area);
 
         let typing_text = if self.text_input_queue.is_empty() {
             " "
@@ -778,26 +886,24 @@ impl Widget for &App {
         let help_text = {
             let mut s = String::new();
             if self.text_input_queue.is_empty() {
-                s = "<ctrl-c> quit | ↑/↓ navigate | [tab] change pane | s<k>ip".to_string();
+                s = "<ctrl-c> quit | ↑/↓ nav | [tab] next pane | <ctrl-w> write | <ctrl-u> reload | s<k>ip"
+                    .to_string();
                 if !self.editing_playlist {
                     let q_text = if self.queue_open { "close" } else { "open" };
                     s.push_str(format!(" | <shft-q> {q_text} queue").as_str());
                     match self.current_menu {
-                        CurrentMenu::Songs => {
-                            s.push_str(" | [space] play song | en<q>ueue song | <u>pdate song")
+                        CurrentMenu::Songs => s.push_str(" | [space] play | en<q>ueue | <u>pdate"),
+                        CurrentMenu::Playlists => {
+                            s.push_str(" | [space] play | <r> shuffle play | <u>pdate")
                         }
-                        CurrentMenu::Playlists => s.push_str(
-                            " | [space] play playlist | <r> shuffle play | <u>pdate playlist name",
-                        ),
                         _ => (),
                     }
                 } else {
-                    s.push_str(" | <ctrl-u> undo changes");
                     match self.current_menu {
                         CurrentMenu::Songs => {
-                            s.push_str(" | [space] add song to end | <i>nsert song at selectd idx")
+                            s.push_str(" | [space] append | <i>nsert at selectd idx")
                         }
-                        CurrentMenu::PlaylistEditor => s.push_str(" | <r>emove selected song"),
+                        CurrentMenu::PlaylistEditor => s.push_str(" | <r>emove selected"),
                         _ => (),
                     }
                 }
@@ -824,6 +930,10 @@ impl Widget for &App {
         self.draw_now_playing(now_playing_area, buf);
 
         self.draw_songs(song_area, buf);
+
+        if self.lyrics_open {
+            self.draw_lyrics(lyrics_area, buf);
+        }
 
         self.draw_playlists(playlist_area, buf);
 

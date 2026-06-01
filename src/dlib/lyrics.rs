@@ -55,24 +55,35 @@ impl LyricInfo {
         if !self.is_synced {
             return None;
         }
-        let time = time.saturating_sub(1);
+
         let pos = self
             .timings
-            .clone()
-            .unwrap()
+            .as_ref()?
             .iter()
-            .position(|&timing| timing <= time);
-        if let Some(pos) = pos {
-            return Some(
-                self.lyrics
-                    .iter()
-                    .skip(pos.saturating_sub(match_pos))
-                    .take(line_count)
-                    .cloned()
-                    .collect(),
-            );
+            .rposition(|&t| t <= time)
+            .unwrap_or(0);
+
+        let mut out: Vec<String> = self
+            .lyrics
+            .iter()
+            .skip(pos.saturating_sub(match_pos))
+            .take(line_count)
+            .cloned()
+            .collect();
+
+        if pos == 0 {
+            out.insert(0, "".to_string());
         }
-        None
+
+        Some(out)
+    }
+
+    pub fn longest_lyric_in_song(&self) -> usize {
+        self.lyrics
+            .iter()
+            .map(|s| s.len())
+            .max()
+            .unwrap_or_default()
     }
 }
 

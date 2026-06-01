@@ -54,6 +54,7 @@ impl DopplerInfo {
         Ok(DopplerInfo {
             songs: Arc::new(RwLock::new(songs)),
             playlists,
+            lyrics: read_lyrics_from_file().ok(),
             song_indices: Arc::new(RwLock::new(song_indices)),
             playlist_indices,
             removed_songs: HashSet::new(),
@@ -150,8 +151,8 @@ impl DopplerInfo {
         let mut pi = match self.get_playlist_by_id(id) {
             Some(p) => p.dynamic_iter(),
             None => {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
+                return Err(io::Error::new(
+                    io::ErrorKind::NotFound,
                     "No playlist with this id exists",
                 ));
             }
@@ -161,23 +162,13 @@ impl DopplerInfo {
             pi.shuffle();
         }
 
-        let first_song = pi.next().ok_or_else(|| {
-            std::io::Error::new(std::io::ErrorKind::NotFound, "No songs in playlist")
-        })?;
+        let first_song = pi
+            .next()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "No songs in playlist"))?;
+
+        *self.enqueued_playlist.lock().unwrap() = Some(pi);
 
         self.play_song(first_song)?;
-
-        enqueue_next_callback(
-            self.player.clone(),
-            self.enqueued_playlist.clone(),
-            self.currently_playing.clone(),
-            self.songs.clone(),
-            self.song_indices.clone(),
-            self.app_notifier.clone(),
-        );
-
-        let mut lock = self.enqueued_playlist.lock().unwrap();
-        *lock = Some(pi);
 
         Ok(())
     }
@@ -403,6 +394,13 @@ impl DopplerInfo {
         Ok(())
     }
 
+    pub fn get_lyrics_from_song_id(&self, id: u32) -> Option<&LyricInfo> {
+        self.lyrics
+            .as_ref()?
+            .iter()
+            .find(|&l| l.song_id == Some(id))
+    }
+
     pub fn reload_from_files(&mut self) -> io::Result<()> {
         let mut songs = read_songs_from_file()?;
         songs.iter_mut().for_each(|s| {
@@ -425,6 +423,7 @@ impl DopplerInfo {
         self.playlist_indices = playlist_indices;
         self.max_song_id = max_song_id;
         self.max_playlist_id = max_playlist_id;
+        self.lyrics = read_lyrics_from_file().ok();
 
         Ok(())
     }
