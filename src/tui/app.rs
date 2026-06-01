@@ -5,6 +5,7 @@ use ratatui::{
     prelude::*,
     widgets::{Paragraph, TableState, Wrap},
 };
+use serde_json::to_string;
 
 pub const TABLE_SELECTED_STYLE: Style = Style::new().underlined().bold();
 pub const TABLE_UNSELECTED_STYLE: Style = Style::new();
@@ -314,6 +315,7 @@ impl App {
                     }
                     KeyCode::Tab => self.cycle_menu(),
                     KeyCode::Char('k') => self.dinfo.skip_song(),
+                    KeyCode::Char('p') => self.dinfo.toggle_pause(),
                     KeyCode::Char('Q') => self.toggle_queue(),
                     KeyCode::Char('L') => self.lyrics_open = !self.lyrics_open,
                     KeyCode::Char('f') => self.toggle_playlist_edit(),
@@ -726,7 +728,7 @@ impl App {
         let album_string;
         let artist_string;
         let duration_string;
-        let seekbar_string;
+        let mut seekbar_string = (if self.dinfo.is_paused() { "|> " } else { "|| " }).to_string();
         if let Some(song) = current_song {
             song_string = truncate_string_and_add_suffix(&song.name, block_width, None);
             album_string = truncate_string_and_add_suffix(
@@ -741,19 +743,25 @@ impl App {
                 seconds_to_base60_string(song.duration)
             );
 
-            seekbar_string = seek_bar_string(
-                self.dinfo.player.lock().unwrap().get_pos().as_secs() as u32,
-                song.duration,
-                block_width as u32 - 4,
-            )
-            .unwrap_or("".to_string());
+            seekbar_string.push_str(
+                seek_bar_string(
+                    self.dinfo.player.lock().unwrap().get_pos().as_secs() as u32,
+                    song.duration,
+                    block_width as u32 - 6,
+                )
+                .unwrap_or("".to_string())
+                .as_str(),
+            );
         } else {
             song_string = "Nothing".to_string();
             album_string = "on Nothing".to_string();
             artist_string = "Nobody".to_string();
             duration_string = "0:00/0:00".to_string();
-            seekbar_string =
-                seek_bar_string(5, 10, block_width as u32 - 4).unwrap_or("".to_string());
+            seekbar_string.push_str(
+                seek_bar_string(5, 10, block_width as u32 - 6)
+                    .unwrap_or("".to_string())
+                    .as_str(),
+            );
         }
         Paragraph::new(vec![
             Line::from(song_string),
@@ -886,7 +894,7 @@ impl Widget for &App {
         let help_text = {
             let mut s = String::new();
             if self.text_input_queue.is_empty() {
-                s = "<ctrl-c> quit | ↑/↓ nav | [tab] next pane | <ctrl-w> write | <ctrl-u> reload | s<k>ip"
+                s = "<ctrl-c> quit | ↑/↓ nav | [tab] next pane | <ctrl-w> write | <ctrl-u> reload | <p>ause | s<k>ip"
                     .to_string();
                 if !self.editing_playlist {
                     let q_text = if self.queue_open { "close" } else { "open" };

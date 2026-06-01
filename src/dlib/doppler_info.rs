@@ -147,6 +147,19 @@ impl DopplerInfo {
         self.player.lock().unwrap().skip_one();
     }
 
+    pub fn is_paused(&self) -> bool {
+        self.player.lock().unwrap().is_paused()
+    }
+
+    pub fn toggle_pause(&mut self) {
+        let lock = self.player.lock().unwrap();
+        if lock.is_paused() {
+            lock.play();
+        } else {
+            lock.pause();
+        }
+    }
+
     pub fn play_playlist(&mut self, id: u32, shuffle: bool) -> io::Result<()> {
         let mut pi = match self.get_playlist_by_id(id) {
             Some(p) => p.dynamic_iter(),
