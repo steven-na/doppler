@@ -315,7 +315,7 @@ while IFS= read -r mp3; do
     "$TMP_SONGS" > "$TMP2" && mv "$TMP2" "$TMP_SONGS"
 
   SONGS_DIRTY=1
-done < <(find "$MP3_DIR" -maxdepth 1 -name "*.mp3" | sort)
+done < <(find -L "$MP3_DIR" -maxdepth 1 -name "*.mp3" | sort)
 
 # ─── Phase 5: persist songs.json (only if changed) ───────────────────────────
 
