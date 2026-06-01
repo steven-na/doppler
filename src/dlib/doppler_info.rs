@@ -1,11 +1,13 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::{BufReader, BufWriter, Write};
-use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, RwLock, mpsc};
 use std::{fs, io};
 
 use crate::dlib::playlist_iter::PlaylistIter;
-use crate::dlib::{playlist::*, song::*};
+use crate::dlib::{
+    playlist::{self, *},
+    song::*,
+};
 use crate::tui::app::AppEvent;
 use crate::tui::tables::QueueEntry;
 use crate::util::search_utli::search;
@@ -27,7 +29,6 @@ pub struct DopplerInfo {
     max_playlist_id: Option<u32>,
 
     pub enqueued_playlist: Arc<Mutex<Option<PlaylistIter>>>,
-    pub queue_dirty: Arc<AtomicBool>,
     pub currently_playing: Arc<Mutex<Option<u32>>>,
     pub player: Arc<Mutex<rodio::Player>>,
     app_notifier: mpsc::Sender<AppEvent>,
@@ -60,7 +61,6 @@ impl DopplerInfo {
             max_song_id,
             max_playlist_id,
             enqueued_playlist: Arc::new(Mutex::new(None)),
-            queue_dirty: Arc::new(AtomicBool::new(true)),
             currently_playing: Arc::new(Mutex::new(None)),
             player: Arc::new(Mutex::new(player)),
             app_notifier: sender,
@@ -90,8 +90,6 @@ impl DopplerInfo {
         let mut cs_lock = self.currently_playing.lock().unwrap();
         *cs_lock = Some(id);
         drop(cs_lock);
-        self.queue_dirty
-            .store(true, std::sync::atomic::Ordering::Relaxed);
         self.app_notifier.send(AppEvent::Song).unwrap();
 
         enqueue_next_callback(
@@ -100,7 +98,6 @@ impl DopplerInfo {
             self.currently_playing.clone(),
             self.songs.clone(),
             self.song_indices.clone(),
-            self.queue_dirty.clone(),
             self.app_notifier.clone(),
         );
 
@@ -128,8 +125,6 @@ impl DopplerInfo {
         ))?;
         q.insert_back(id);
         drop(q_lock);
-        self.queue_dirty
-            .store(true, std::sync::atomic::Ordering::Relaxed);
 
         self.app_notifier.send(AppEvent::Song).unwrap();
 
@@ -140,7 +135,6 @@ impl DopplerInfo {
                 self.currently_playing.clone(),
                 self.songs.clone(),
                 self.song_indices.clone(),
-                self.queue_dirty.clone(),
                 self.app_notifier.clone(),
             );
         }
@@ -179,7 +173,6 @@ impl DopplerInfo {
             self.currently_playing.clone(),
             self.songs.clone(),
             self.song_indices.clone(),
-            self.queue_dirty.clone(),
             self.app_notifier.clone(),
         );
 
@@ -410,6 +403,32 @@ impl DopplerInfo {
         Ok(())
     }
 
+    pub fn reload_from_files(&mut self) -> io::Result<()> {
+        let mut songs = read_songs_from_file()?;
+        songs.iter_mut().for_each(|s| {
+            s.file_entry_up_to_date = true;
+        });
+        let mut playlists = read_playlists_from_file()?;
+        playlists.iter_mut().for_each(|p| {
+            p.file_entry_up_to_date = true;
+        });
+
+        let song_indices = indices_from_song_list(&songs);
+        let max_song_id = songs.iter().map(|s| s.id.unwrap_or(0)).max();
+
+        let playlist_indices = indices_from_playlist_list(&playlists);
+        let max_playlist_id = playlists.iter().map(|s| s.id.unwrap_or(0)).max();
+
+        *self.songs.write().unwrap() = songs;
+        self.playlists = playlists;
+        *self.song_indices.write().unwrap() = song_indices;
+        self.playlist_indices = playlist_indices;
+        self.max_song_id = max_song_id;
+        self.max_playlist_id = max_playlist_id;
+
+        Ok(())
+    }
+
     pub fn update_songs_file(&mut self) -> io::Result<u32> {
         let file_songs = read_songs_from_file()?;
         {
@@ -530,7 +549,6 @@ fn enqueue_next_callback(
     current_song: Arc<Mutex<Option<u32>>>,
     songs: Arc<RwLock<Vec<SongInfo>>>,
     song_indices: Arc<RwLock<HashMap<u32, usize>>>,
-    queue_dirty: Arc<AtomicBool>,
     sender: mpsc::Sender<AppEvent>,
 ) {
     let p = Arc::clone(&player);
@@ -538,7 +556,6 @@ fn enqueue_next_callback(
     let cs = Arc::clone(&current_song);
     let ss = Arc::clone(&songs);
     let si = Arc::clone(&song_indices);
-    let qd = Arc::clone(&queue_dirty);
 
     sender.send(AppEvent::Song).unwrap();
 
@@ -546,7 +563,6 @@ fn enqueue_next_callback(
         .lock()
         .unwrap()
         .append(rodio::source::EmptyCallback::new(Box::new(move || {
-            qd.store(true, std::sync::atomic::Ordering::Relaxed);
             let mut cs_lock = cs.lock().unwrap();
             *cs_lock = None;
 
@@ -567,7 +583,6 @@ fn enqueue_next_callback(
                             Arc::clone(&cs),
                             Arc::clone(&ss),
                             Arc::clone(&si),
-                            Arc::clone(&qd),
                             sender.clone(),
                         );
                     }

@@ -42,6 +42,7 @@ pub fn draw_table(
     selected: bool,
     table_data: &TableData,
     widths: &[Constraint],
+    bottom_text: Option<String>,
 ) {
     let mut state = table_data.state.borrow_mut();
     let block = ratatui::widgets::Block::bordered()
@@ -50,7 +51,15 @@ pub fn draw_table(
             TABLE_SELECTED_STYLE
         } else {
             TABLE_UNSELECTED_STYLE
-        }));
+        }))
+        .title_bottom(
+            Line::from(if let Some(t) = bottom_text {
+                t
+            } else {
+                "".to_string()
+            })
+            .centered(),
+        );
     let block_inner = block.inner(area);
     block.render(area, buf);
 
