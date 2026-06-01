@@ -209,7 +209,7 @@ impl DopplerInfo {
     }
 
     pub fn filter_songs(&self, query: String) -> Vec<SongInfo> {
-        let songs = self.songs.read().unwrap();
+        let songs = self.get_linked_songs();
         let possible = songs
             .iter()
             .filter_map(|a| a.id.map(|i| (a.name.clone(), i)));
@@ -226,6 +226,16 @@ impl DopplerInfo {
             .iter()
             .filter_map(|a| a.id.map(|i| (a.name.clone(), i)));
         search(&query, possible, limit.unwrap_or(usize::MAX))
+    }
+
+    pub fn get_linked_songs(&self) -> Vec<SongInfo> {
+        self.songs
+            .read()
+            .unwrap()
+            .iter()
+            .filter(|s| s.filename.is_some())
+            .cloned()
+            .collect()
     }
 
     pub fn get_song_by_id(&self, id: u32) -> Option<SongInfo> {

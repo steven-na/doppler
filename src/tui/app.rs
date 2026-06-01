@@ -464,7 +464,7 @@ impl App {
                 .filter_songs(self.text_inputs.search_query.clone())
                 .clone()
         } else {
-            self.dinfo.songs.read().unwrap().clone()
+            self.dinfo.get_linked_songs()
         };
         self.song_table_state.rebuild(songs.iter().rev());
     }
