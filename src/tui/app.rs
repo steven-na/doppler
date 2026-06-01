@@ -196,6 +196,7 @@ impl App {
                 if let Some(ch) = k.code.as_char() {
                     if matches!(dest, TextInputDestination::Search) {
                         self.song_table_state.state.borrow_mut().select_first();
+                        self.need_rebuild = true;
                     }
                     dest_str.push(ch);
                 }
@@ -240,15 +241,20 @@ impl App {
                         KeyCode::Char('i') if self.editing_playlist => self.insert_playlist_song(),
                         KeyCode::Char(' ') => {
                             self.play_song();
+                            return;
                         }
                         KeyCode::Char('q') => {
                             self.enqueue_song();
+                            return;
                         }
                         KeyCode::Char('/') if self.text_input_queue.is_empty() => {
                             self.text_input_queue.push(TextInputDestination::Search);
                         }
-                        KeyCode::Char('u') if self.text_input_queue.is_empty() => {
-                            self.start_edit_song()
+                        KeyCode::Char('u')
+                            if self.text_input_queue.is_empty() && k.modifiers.is_empty() =>
+                        {
+                            self.start_edit_song();
+                            return;
                         }
                         KeyCode::Esc => self.text_inputs.search_query.clear(),
                         _ => (),
@@ -257,12 +263,17 @@ impl App {
                     CurrentMenu::Playlists => match k.code {
                         KeyCode::Char(' ') => {
                             self.play_playlist();
+                            return;
                         }
-                        KeyCode::Char('u') if self.text_input_queue.is_empty() => {
-                            self.start_edit_playlist()
+                        KeyCode::Char('u')
+                            if self.text_input_queue.is_empty() && k.modifiers.is_empty() =>
+                        {
+                            self.start_edit_playlist();
+                            return;
                         }
                         KeyCode::Char('r') => {
                             self.shuffle_play_playlist();
+                            return;
                         }
                         _ => (),
                     },
@@ -270,9 +281,9 @@ impl App {
                         KeyCode::Char('r') if self.editing_playlist => self.remove_playlist_song(),
                         _ => (),
                     },
-                    // General
                     _ => (),
                 }
+                // General
                 match k.code {
                     KeyCode::Char('c') if k.modifiers.contains(KeyModifiers::CONTROL) => {
                         self.should_exit = true
@@ -285,6 +296,7 @@ impl App {
                             Ok(()) => self.emit_message("Reloaded from files".to_string()),
                             Err(err) => self.emit_message(format!("Error reloading ({})", err)),
                         }
+                        self.need_rebuild = true;
                     }
                     KeyCode::Tab => self.cycle_menu(),
                     KeyCode::Char('k') => self.dinfo.skip_song(),
@@ -763,13 +775,13 @@ impl Widget for &App {
         let help_text = {
             let mut s = String::new();
             if self.text_input_queue.is_empty() {
-                s = "<ctrl-c> quit | ↑/↓ navigate | [tab] change pane".to_string();
+                s = "<ctrl-c> quit | ↑/↓ navigate | [tab] change pane | s<k>ip".to_string();
                 if !self.editing_playlist {
                     let q_text = if self.queue_open { "close" } else { "open" };
                     s.push_str(format!(" | <shft-q> {q_text} queue").as_str());
                     match self.current_menu {
                         CurrentMenu::Songs => {
-                            s.push_str(" | [space] play song | <e>nqueue song | <u>pdate song")
+                            s.push_str(" | [space] play song | en<q>ueue song | <u>pdate song")
                         }
                         CurrentMenu::Playlists => s.push_str(
                             " | [space] play playlist | <r> shuffle play | <u>pdate playlist name",
