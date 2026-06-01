@@ -4,16 +4,14 @@ use std::sync::{Arc, Mutex, RwLock, mpsc};
 use std::{fs, io};
 
 use crate::dlib::playlist_iter::PlaylistIter;
-use crate::dlib::{
-    playlist::{self, *},
-    song::*,
-};
+use crate::dlib::{lyrics::*, playlist::*, song::*};
 use crate::tui::app::AppEvent;
 use crate::tui::tables::QueueEntry;
 use crate::util::search_utli::search;
 
 pub const SONGS_FILE_PATH: &str = "./data/songs.json";
 pub const PLAYLISTS_FILE_PATH: &str = "./data/playlists.json";
+pub const LYRICS_FILE_PATH: &str = "./data/lyrics.json";
 
 pub struct DopplerInfo {
     pub songs: Arc<RwLock<Vec<SongInfo>>>,
@@ -32,6 +30,8 @@ pub struct DopplerInfo {
     pub currently_playing: Arc<Mutex<Option<u32>>>,
     pub player: Arc<Mutex<rodio::Player>>,
     app_notifier: mpsc::Sender<AppEvent>,
+
+    pub lyrics: Option<Vec<LyricInfo>>,
 }
 
 impl DopplerInfo {

@@ -1,4 +1,4 @@
-use std::{cell::RefCell, fmt::format, io, sync::mpsc, thread, time::Duration};
+use std::{cell::RefCell, io, sync::mpsc, thread, time::Duration};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
@@ -256,7 +256,10 @@ impl App {
                             self.start_edit_song();
                             return;
                         }
-                        KeyCode::Esc => self.text_inputs.search_query.clear(),
+                        KeyCode::Esc => {
+                            self.text_inputs.search_query.clear();
+                            self.need_rebuild = true;
+                        }
                         _ => (),
                     },
                     // Playlist only

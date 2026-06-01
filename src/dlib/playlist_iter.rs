@@ -60,7 +60,7 @@ impl PlaylistIter {
         let mut songs = ids.to_vec();
         songs.shuffle(&mut rng);
         songs.retain(|id1| !self.queue.contains(&(*id1, ItemType::OriginalItem)));
-        let mut songs = ids.iter();
+        let mut songs = songs.iter();
 
         while idx < self.queue.len() {
             idx += frequency;
