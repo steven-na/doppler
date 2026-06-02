@@ -10,10 +10,6 @@ use crate::tui::app::AppEvent;
 use crate::tui::tables::QueueEntry;
 use crate::util::search_utli::search;
 
-pub const SONGS_FILE_PATH: &str = "./data/songs.json";
-pub const PLAYLISTS_FILE_PATH: &str = "./data/playlists.json";
-pub const LYRICS_FILE_PATH: &str = "./data/lyrics.json";
-
 pub struct DopplerInfo {
     pub base_directory: String,
 
@@ -479,7 +475,7 @@ impl DopplerInfo {
             }
         }
 
-        let temp_file_path = format!("{}.temp", SONGS_FILE_PATH);
+        let temp_file_path = format!("{}/songs.json.temp", self.base_directory);
         let temp_song_file = fs::OpenOptions::new()
             .write(true)
             .truncate(true)
@@ -514,7 +510,10 @@ impl DopplerInfo {
                 }
             });
 
-            fs::rename(&temp_file_path, SONGS_FILE_PATH)?;
+            fs::rename(
+                &temp_file_path,
+                format!("{}/songs.json", self.base_directory),
+            )?;
 
             songs.retain(|s| match s.id {
                 Some(i) => !self.removed_songs.contains(&i),
@@ -533,7 +532,7 @@ impl DopplerInfo {
     }
 
     pub fn update_playlist_file(&mut self) -> io::Result<u32> {
-        let temp_file_path = format!("{}.temp", PLAYLISTS_FILE_PATH);
+        let temp_file_path = format!("{}/playlists.json.temp", self.base_directory);
         let temp_playlist_file = fs::OpenOptions::new()
             .write(true)
             .truncate(true)
@@ -564,7 +563,10 @@ impl DopplerInfo {
             }
         });
 
-        fs::rename(temp_file_path, PLAYLISTS_FILE_PATH)?;
+        fs::rename(
+            temp_file_path,
+            format!("{}/playlists.json", self.base_directory),
+        )?;
 
         self.playlists.retain(|s| match s.id {
             Some(i) => !self.removed_playlists.contains(&i),
