@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::{BufReader, BufWriter, Write};
+use std::ops::Add;
 use std::sync::{Arc, Mutex, RwLock, mpsc};
 use std::{fs, io};
 
@@ -14,6 +15,8 @@ pub const PLAYLISTS_FILE_PATH: &str = "./data/playlists.json";
 pub const LYRICS_FILE_PATH: &str = "./data/lyrics.json";
 
 pub struct DopplerInfo {
+    pub base_directory: String,
+
     pub songs: Arc<RwLock<Vec<SongInfo>>>,
     pub playlists: Vec<PlaylistInfo>,
 
@@ -35,12 +38,16 @@ pub struct DopplerInfo {
 }
 
 impl DopplerInfo {
-    pub fn new(player: rodio::Player, sender: mpsc::Sender<AppEvent>) -> io::Result<Self> {
-        let mut songs = read_songs_from_file()?;
+    pub fn new(
+        base_directory: String,
+        player: rodio::Player,
+        sender: mpsc::Sender<AppEvent>,
+    ) -> io::Result<Self> {
+        let mut songs = read_songs_from_file(&base_directory)?;
         songs.iter_mut().for_each(|s| {
             s.file_entry_up_to_date = true;
         });
-        let mut playlists = read_playlists_from_file()?;
+        let mut playlists = read_playlists_from_file(&base_directory)?;
         playlists.iter_mut().for_each(|p| {
             p.file_entry_up_to_date = true;
         });
@@ -52,9 +59,10 @@ impl DopplerInfo {
         let max_playlist_id = playlists.iter().map(|s| s.id.unwrap_or(0)).max();
 
         Ok(DopplerInfo {
+            base_directory: base_directory.clone(),
             songs: Arc::new(RwLock::new(songs)),
             playlists,
-            lyrics: read_lyrics_from_file().ok(),
+            lyrics: read_lyrics_from_file(&base_directory).ok(),
             song_indices: Arc::new(RwLock::new(song_indices)),
             playlist_indices,
             removed_songs: HashSet::new(),
@@ -158,6 +166,12 @@ impl DopplerInfo {
         } else {
             lock.pause();
         }
+    }
+
+    pub fn change_volume(&mut self, add: f32) {
+        let lock = self.player.lock().unwrap();
+        let cur_vol = lock.volume();
+        lock.set_volume(cur_vol.add(add).clamp(0.0, 1.0));
     }
 
     pub fn play_playlist(&mut self, id: u32, shuffle: bool) -> io::Result<()> {
@@ -425,11 +439,11 @@ impl DopplerInfo {
     }
 
     pub fn reload_from_files(&mut self) -> io::Result<()> {
-        let mut songs = read_songs_from_file()?;
+        let mut songs = read_songs_from_file(&self.base_directory)?;
         songs.iter_mut().for_each(|s| {
             s.file_entry_up_to_date = true;
         });
-        let mut playlists = read_playlists_from_file()?;
+        let mut playlists = read_playlists_from_file(&self.base_directory)?;
         playlists.iter_mut().for_each(|p| {
             p.file_entry_up_to_date = true;
         });
@@ -446,13 +460,13 @@ impl DopplerInfo {
         self.playlist_indices = playlist_indices;
         self.max_song_id = max_song_id;
         self.max_playlist_id = max_playlist_id;
-        self.lyrics = read_lyrics_from_file().ok();
+        self.lyrics = read_lyrics_from_file(&self.base_directory).ok();
 
         Ok(())
     }
 
     pub fn update_songs_file(&mut self) -> io::Result<u32> {
-        let file_songs = read_songs_from_file()?;
+        let file_songs = read_songs_from_file(&self.base_directory)?;
         {
             let songs = self.songs.read().unwrap();
             let to_add: Vec<SongInfo> = file_songs

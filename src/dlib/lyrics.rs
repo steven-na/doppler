@@ -5,8 +5,6 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use crate::dlib::doppler_info::LYRICS_FILE_PATH;
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct LyricInfo {
     pub song_id: Option<u32>,
@@ -93,8 +91,10 @@ impl Default for LyricInfo {
     }
 }
 
-pub fn read_lyrics_from_file() -> io::Result<Vec<LyricInfo>> {
-    let lyrics_file = fs::OpenOptions::new().read(true).open(LYRICS_FILE_PATH)?;
+pub fn read_lyrics_from_file(base_directory: &str) -> io::Result<Vec<LyricInfo>> {
+    let lyrics_file = fs::OpenOptions::new()
+        .read(true)
+        .open(format!("{base_directory}/lyrics.json"))?;
     let mut reader = BufReader::new(&lyrics_file);
     let mut buf = String::new();
     let mut lyrics = Vec::new();

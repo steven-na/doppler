@@ -5,7 +5,6 @@ use ratatui::{
     prelude::*,
     widgets::{Paragraph, TableState, Wrap},
 };
-use serde_json::to_string;
 
 pub const TABLE_SELECTED_STYLE: Style = Style::new().underlined().bold();
 pub const TABLE_UNSELECTED_STYLE: Style = Style::new();
@@ -88,7 +87,7 @@ fn send_input_to_app(tx: mpsc::Sender<AppEvent>) {
 }
 
 impl App {
-    pub fn new(player: rodio::Player) -> io::Result<Self> {
+    pub fn new(base_directory: Option<String>, player: rodio::Player) -> io::Result<Self> {
         let (event_tx, event_rx) = mpsc::channel::<AppEvent>();
 
         let tx_for_input = event_tx.clone();
@@ -103,7 +102,11 @@ impl App {
             }
         });
 
-        let dinfo = DopplerInfo::new(player, event_tx)?;
+        let dinfo = DopplerInfo::new(
+            base_directory.unwrap_or("./data".to_string()),
+            player,
+            event_tx,
+        )?;
         let table_state = TableState::default().with_selected(0);
         Ok(App {
             event_receiver: event_rx,
@@ -238,6 +241,7 @@ impl App {
                     }
                     KeyCode::Backspace => {
                         dest_str.pop();
+                        self.need_rebuild = true;
                     }
                     _ => (),
                 }
@@ -313,6 +317,8 @@ impl App {
                         }
                         self.need_rebuild = true;
                     }
+                    KeyCode::Char('V') => self.dinfo.change_volume(0.05),
+                    KeyCode::Char('v') => self.dinfo.change_volume(-0.05),
                     KeyCode::Tab => self.cycle_menu(),
                     KeyCode::Char('k') => self.dinfo.skip_song(),
                     KeyCode::Char('p') => self.dinfo.toggle_pause(),
@@ -894,13 +900,15 @@ impl Widget for &App {
         let help_text = {
             let mut s = String::new();
             if self.text_input_queue.is_empty() {
-                s = "<ctrl-c> quit | ↑/↓ nav | [tab] next pane | <ctrl-w> write | <ctrl-u> reload | <p>ause | s<k>ip"
+                s = "<ctrl-c> quit | ↑/↓ nav | <V/v>ol up/down | [tab] next pane | <ctrl-w> write | <ctrl-u> reload | <p>ause | s<k>ip"
                     .to_string();
                 if !self.editing_playlist {
                     let q_text = if self.queue_open { "close" } else { "open" };
                     s.push_str(format!(" | <shft-q> {q_text} queue").as_str());
                     match self.current_menu {
-                        CurrentMenu::Songs => s.push_str(" | [space] play | en<q>ueue | <u>pdate"),
+                        CurrentMenu::Songs => {
+                            s.push_str(" | < / > search | [space] play | en<q>ueue | <u>pdate")
+                        }
                         CurrentMenu::Playlists => {
                             s.push_str(" | [space] play | <r> shuffle play | <u>pdate")
                         }

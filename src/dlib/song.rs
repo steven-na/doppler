@@ -7,8 +7,6 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use super::doppler_info::SONGS_FILE_PATH;
-
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SongInfo {
     pub name: String,
@@ -47,8 +45,10 @@ impl Default for SongInfo {
     }
 }
 
-pub fn read_songs_from_file() -> io::Result<Vec<SongInfo>> {
-    let song_file = fs::OpenOptions::new().read(true).open(SONGS_FILE_PATH)?;
+pub fn read_songs_from_file(base_directory: &str) -> io::Result<Vec<SongInfo>> {
+    let song_file = fs::OpenOptions::new()
+        .read(true)
+        .open(format!("{base_directory}/songs.json"))?;
     let mut reader = BufReader::new(&song_file);
     let mut buf = String::new();
     let mut songs = Vec::new();

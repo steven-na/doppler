@@ -6,7 +6,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use crate::dlib::{doppler_info::PLAYLISTS_FILE_PATH, playlist_iter::PlaylistIter};
+use crate::dlib::playlist_iter::PlaylistIter;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PlaylistInfo {
@@ -85,10 +85,10 @@ impl Default for PlaylistInfo {
     }
 }
 
-pub fn read_playlists_from_file() -> io::Result<Vec<PlaylistInfo>> {
+pub fn read_playlists_from_file(base_directory: &str) -> io::Result<Vec<PlaylistInfo>> {
     let playlist_file = fs::OpenOptions::new()
         .read(true)
-        .open(PLAYLISTS_FILE_PATH)?;
+        .open(format!("{base_directory}/songs.json"))?;
     let mut reader = BufReader::new(&playlist_file);
     let mut buf = String::new();
     let mut playlists = Vec::new();
