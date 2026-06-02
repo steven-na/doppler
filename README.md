@@ -13,8 +13,7 @@ This project is a simple and easy to use terminal music player. Once you have im
 
 ### What you'll need:
 - Rust language
-- Spotify-dl
-(Make sure to check the [dependencies](#dependencies-and-required-programs)) section
+- Spotify-dl (Make sure to check the [dependencies](#dependencies-and-required-programs)) section
 
 ### Start fresh:
 
