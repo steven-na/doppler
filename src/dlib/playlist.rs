@@ -88,7 +88,7 @@ impl Default for PlaylistInfo {
 pub fn read_playlists_from_file(base_directory: &str) -> io::Result<Vec<PlaylistInfo>> {
     let playlist_file = fs::OpenOptions::new()
         .read(true)
-        .open(format!("{base_directory}/songs.json"))?;
+        .open(format!("{base_directory}/playlists.json"))?;
     let mut reader = BufReader::new(&playlist_file);
     let mut buf = String::new();
     let mut playlists = Vec::new();
