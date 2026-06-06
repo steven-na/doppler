@@ -9,6 +9,8 @@ This project is a simple and easy to use terminal music player. Once you have im
 - Create custom playlists to play and add/remove songs
 - View lyrics with live syncing
 
+![TUI](./demo.jpg)
+
 ## How to use Doppler
 
 ### What you'll need:
